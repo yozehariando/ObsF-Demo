@@ -18,6 +18,14 @@ We'll create these new files to extend functionality without modifying existing 
    - Location: `src/components/api/api-utils.js`
    - Purpose: Provide helper functions for data processing and validation
 
+4. **`api-upload-component.js`** - File upload component for sequence analysis 🔜
+   - Location: `src/components/api/api-upload-component.js`
+   - Purpose: Handle FASTA file uploads and model selection
+
+5. **`api-job-tracker.js`** - Job tracking system for sequence analysis 🔜
+   - Location: `src/components/api/api-job-tracker.js`
+   - Purpose: Track status of analysis jobs and provide user feedback
+
 ## 2. Phased Development Approach
 
 We'll implement the enhanced API integration in three distinct phases:
@@ -50,25 +58,163 @@ This phase focuses on fetching and displaying the database of DNA sequences:
 
 This phase adds the ability for users to upload and analyze their own sequences:
 
-1. **Implement File Upload** 🔜
-   - Create file upload component
-   - Add model selection options
-   - Implement submission to `/pathtrack/sequence/embed`
+#### Development Plan for Phase 2
 
-2. **Add Job Tracking** 🔜
-   - Implement polling of `/pathtrack/jobs/{job_id}`
-   - Create status indicator UI
-   - Add error handling and retry functionality
+##### Step 1: Create File Upload Component
+1. Create `api-upload-component.js` with:
+   - Drag-and-drop interface for FASTA files
+   - File validation (format, size limits)
+   - Model selection dropdown (DNABERT-S, etc.)
+   - Upload progress indicator
+   - Error handling for invalid files
 
-3. **Implement UMAP Projection** 🔜
-   - Add request to `/pathtrack/sequence/umap`
-   - Integrate user sequence into visualizations
-   - Implement highlighting for user sequence
+2. Connect to dashboard:
+   - Replace current CSV upload with FASTA upload
+   - Update "Upload" button functionality
+   - Add modal dialog for upload options
 
-4. **Add Similarity Analysis** 🔜
-   - Implement request to `/pathtrack/sequence/similar`
-   - Add similarity visualization features
+##### Step 2: Implement API Service Enhancements
+1. Add new functions to `api-service.js`:
+   - `uploadSequence(file, model)` - Submit to `/pathtrack/sequence/embed`
+   - `checkJobStatus(jobId)` - Poll `/pathtrack/jobs/{job_id}`
+   - `getUmapProjection(embeddingId)` - Request via `/pathtrack/sequence/umap`
+   - `getSimilarSequences(embeddingId)` - Get via `/pathtrack/sequence/similar`
+
+2. Implement error handling:
+   - Retry logic for failed requests
+   - Timeout handling for long-running jobs
+   - Validation of API responses
+
+##### Step 3: Develop Job Tracking System
+1. Create `api-job-tracker.js` with:
+   - Job status management
+   - Polling mechanism with configurable intervals
+   - Progress indicators for multi-step processes
+   - Event system for status updates
+
+2. Add UI components:
+   - Status panel showing current job state
+   - Progress indicators for each step
+   - Error messages and retry options
+
+##### Step 4: Implement UMAP Projection
+1. Add visualization enhancements:
+   - Update `api-visualizations.js` to highlight user sequences
+   - Implement special styling for user-uploaded sequences
+   - Add functions to update visualizations with new data
+
+2. Create projection integration:
+   - Process UMAP projection results
+   - Merge with existing visualization data
+   - Update both map and scatter plot
+
+##### Step 5: Add Similarity Analysis
+1. Implement similarity visualization:
+   - Add functions to show connections between similar sequences
+   - Create visual indicators of similarity strength
    - Implement interactive highlighting
+
+2. Enhance details panel:
+   - Show similarity metrics
+   - Display sequence comparisons
+   - Add filtering and sorting options
+
+##### Step 6: Enhance User Interface
+1. Improve feedback mechanisms:
+   - Add notifications for job completion
+   - Implement error recovery options
+   - Create help tooltips for complex features
+
+2. Add result management:
+   - Export functionality for analysis results
+   - Save/load options for user sequences
+   - History of previous analyses
+
+#### General Flow for Phase 2
+
+##### User Perspective Flow
+
+1. **Initial State**
+   - User arrives at dashboard with existing UMAP data loaded
+   - Visualizations show database sequences
+   - Upload button is available in control panel
+
+2. **Sequence Upload**
+   - User clicks "Upload" button
+   - File upload modal appears with:
+     - Drag-and-drop area or file browser button
+     - Model selection dropdown
+     - Upload button
+   - User selects FASTA file and model, then clicks upload
+
+3. **Processing Feedback**
+   - System shows loading indicator
+   - Job status panel appears showing:
+     - Current step (Embedding → UMAP Projection → Similarity Analysis)
+     - Progress indicator
+     - Estimated time remaining (if available)
+
+4. **Results Visualization**
+   - When processing completes:
+     - User's sequence appears highlighted in visualizations
+     - Similar sequences are visually connected to user's sequence
+     - Details panel updates with user sequence information
+     - Similarity panel shows top similar sequences
+
+5. **Interactive Exploration**
+   - User can:
+     - Click on similar sequences to see detailed comparison
+     - Filter similar sequences by similarity score
+     - Toggle visualization options
+     - Export results for further analysis
+
+##### Technical Flow
+
+1. **File Upload Process**
+   ```
+   User → Upload UI → File Validation → API Request → Job ID Returned
+   ```
+
+2. **Job Tracking Process**
+   ```
+   Job ID → Polling Loop → Status Updates → UI Feedback → Completion
+   ```
+
+3. **Data Processing Pipeline**
+   ```
+   FASTA File → Embedding → UMAP Projection → Similarity Analysis → Visualization
+   ```
+
+4. **API Interaction Sequence**
+   ```
+   POST /pathtrack/sequence/embed → GET /pathtrack/jobs/{job_id} → 
+   GET /pathtrack/sequence/umap → GET /pathtrack/sequence/similar
+   ```
+
+5. **Visualization Update Flow**
+   ```
+   User Data → Transform → Merge with Existing Data → Update Visualizations → Highlight Relationships
+   ```
+
+##### State Management
+
+Throughout this flow, the application will maintain these key states:
+
+1. **Upload State**: `idle` → `validating` → `uploading` → `uploaded`
+2. **Job State**: `queued` → `processing` → `completed` | `failed`
+3. **Analysis State**: `embedding` → `projecting` → `finding_similar` → `complete`
+4. **UI State**: Controls which panels and visualizations are shown
+
+##### Error Handling
+
+The flow includes error handling at each step:
+
+1. **Upload Errors**: File too large, invalid format, network issues
+2. **Job Errors**: Job failed, timeout, server errors
+3. **Analysis Errors**: Processing errors, invalid results
+4. **Visualization Errors**: Data format issues, rendering problems
+
+Each error will trigger appropriate user feedback and recovery options.
 
 ### Phase 3: Refinement and Advanced Features
 
@@ -140,42 +286,44 @@ We've enhanced the dashboard with:
 
 ### Phase 2: User Sequence Upload and Analysis
 
-#### Step 1: Implement File Upload 🔜
-- Create file upload component with drag-and-drop support
-- Add model selection dropdown (DNABERT-S, etc.)
-- Implement submission to `/pathtrack/sequence/embed` endpoint
+#### Step 1: Create api-upload-component.js 🔜
+This file will provide:
+- File upload UI with drag-and-drop support
+- FASTA file validation
+- Model selection options
+- Upload progress tracking
 
-#### Step 2: Add Job Tracking 🔜
-- Implement polling of `/pathtrack/jobs/{job_id}` endpoint
-- Create status indicator UI with progress updates
-- Add error handling and retry functionality
+Key functions:
+- `createUploadModal()` - Create upload modal dialog
+- `validateFastaFile(file)` - Validate FASTA file format
+- `handleFileUpload(file, model)` - Process file upload
+- `showUploadProgress(progress)` - Display upload progress
 
-#### Step 3: Implement UMAP Projection 🔜
-- Add request to `/pathtrack/sequence/umap` endpoint
-- Integrate user sequence into visualizations
-- Implement highlighting for user sequence
+#### Step 2: Enhance api-service.js for sequence analysis 🔜
+We'll add these functions:
+- `uploadSequence(file, model)` - Submit sequence to `/pathtrack/sequence/embed`
+- `checkJobStatus(jobId)` - Poll `/pathtrack/jobs/{job_id}`
+- `getUmapProjection(embeddingId)` - Request projection via `/pathtrack/sequence/umap`
+- `getSimilarSequences(embeddingId)` - Get similar sequences via `/pathtrack/sequence/similar`
 
-#### Step 4: Add Similarity Analysis 🔜
-- Implement request to `/pathtrack/sequence/similar` endpoint
-- Add similarity visualization features
-- Implement interactive highlighting
+#### Step 3: Create api-job-tracker.js 🔜
+This file will handle:
+- Job status tracking
+- Polling mechanism
+- Progress indicators
+- Event-based status updates
 
-### Phase 3: Refinement and Advanced Features
+Key functions:
+- `createJobTracker(jobId)` - Create job tracking instance
+- `startPolling(interval)` - Begin polling for job status
+- `updateJobStatus(status)` - Update job status and UI
+- `onJobComplete(callback)` - Register completion callback
 
-#### Step 1: Optimize Performance
-- Implement lazy loading for large datasets
-- Add caching for API responses
-- Optimize visualization rendering
-
-#### Step 2: Enhance User Experience
-- Add animations and transitions
-- Improve tooltips and information display
-- Add keyboard shortcuts and accessibility features
-
-#### Step 3: Add Advanced Analysis Tools
-- Implement filtering and sorting options
-- Add statistical analysis features
-- Create export and sharing functionality
+#### Step 4: Update api-visualizations.js for user sequences 🔜
+We'll add these functions:
+- `highlightUserSequence(component, sequence)` - Highlight user sequence
+- `showSimilarityConnections(component, userSeq, similarSeqs)` - Show connections
+- `createSimilarityTooltip(sequence, similarity)` - Create tooltip for similar sequences
 
 ## 4. UMAP Visualization Strategy
 

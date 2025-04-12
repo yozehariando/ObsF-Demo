@@ -31,11 +31,8 @@ This dashboard demonstrates a modular approach to visualizing DNA mutation data.
   <div class="card p-4">
     <h2 class="mb-4">Add New Mutation Data</h2>
     <div class="p-4 flex justify-between">
-      <button id="api-button" class="btn btn-primary">Fetch API Data</button>
-      <button id="upload-button" class="btn btn-secondary">Upload CSV</button>
-      <button id="random-button" class="btn btn-success">Generate Random</button>
-      <button id="reset-button" class="btn btn-outline">Reset Data</button>
-      <input type="file" id="file-input" accept=".csv" style="display: none;">
+      <button id="upload-fasta-button" class="btn btn-primary">Upload FASTA Sequence</button>
+      <input type="file" id="fasta-file-input" accept=".fasta,.fa" style="display: none;">
     </div>
   </div>
 </div>
@@ -136,47 +133,28 @@ if (typeof FileAttachment !== 'undefined') {
         }
       }
       
-      // Connect the reset button
-      document.getElementById("reset-button").addEventListener("click", function() {
-        // Reset to original data
-        state.currentData = [...state.originalData];
-        state.selectedPoint = null;
-        
-        // Update visualizations
-        state.mapComponent.updateMap(state.currentData);
-        state.scatterComponent.updateScatterPlot(state.currentData);
-        
-        // Clear details panel
-        document.getElementById("details-panel").innerHTML = 
-          `<p class="text-center text-gray-500">Select a mutation point to view details</p>`;
+      // Connect the FASTA upload button
+      document.getElementById("upload-fasta-button").addEventListener("click", function() {
+        // Trigger the hidden file input
+        document.getElementById("fasta-file-input").click();
       });
       
-      // Connect the API button to refresh data
-      document.getElementById("api-button").addEventListener("click", async function() {
-        showLoadingIndicator("Refreshing API data...");
-        
-        try {
-          const newApiData = await fetchUmapData('DNABERT-S', false); // false to use real API data
-          const newTransformedData = transformUmapData(newApiData);
+      // Handle file selection
+      document.getElementById("fasta-file-input").addEventListener("change", function(event) {
+        const file = event.target.files[0];
+        if (file) {
+          console.log("Selected FASTA file:", file.name);
+          // TODO: Implement FASTA file processing in Phase 2
+          showLoadingIndicator("Processing FASTA file...");
           
-          // Update state
-          state.originalData = [...newTransformedData];
-          state.currentData = newTransformedData;
-          state.selectedPoint = null;
-          
-          // Update visualizations
-          state.mapComponent.updateMap(state.currentData);
-          state.scatterComponent.updateScatterPlot(state.currentData);
-          
-          // Clear details panel
-          document.getElementById("details-panel").innerHTML = 
-            `<p class="text-center text-gray-500">Select a mutation point to view details</p>`;
-          
-          hideLoadingIndicator();
-        } catch (error) {
-          console.error("Error refreshing API data:", error);
-          hideLoadingIndicator();
-          showErrorMessage("Failed to refresh API data: " + error.message);
+          // For now, just show a message that this feature is coming soon
+          setTimeout(() => {
+            hideLoadingIndicator();
+            showInfoMessage("FASTA upload functionality is coming soon in Phase 2!");
+            
+            // Reset the file input so the same file can be selected again
+            event.target.value = "";
+          }, 1500);
         }
       });
       
@@ -265,6 +243,28 @@ if (typeof FileAttachment !== 'undefined') {
     // Auto-hide after 5 seconds
     setTimeout(() => {
       errorDiv.remove();
+    }, 5000);
+  }
+  
+  function showInfoMessage(message) {
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'info-message';
+    infoDiv.style.position = 'fixed';
+    infoDiv.style.top = '20px';
+    infoDiv.style.left = '50%';
+    infoDiv.style.transform = 'translateX(-50%)';
+    infoDiv.style.background = '#d1ecf1';
+    infoDiv.style.color = '#0c5460';
+    infoDiv.style.padding = '10px 20px';
+    infoDiv.style.borderRadius = '5px';
+    infoDiv.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.2)';
+    infoDiv.style.zIndex = '1000';
+    infoDiv.textContent = message;
+    document.body.appendChild(infoDiv);
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+      infoDiv.remove();
     }, 5000);
   }
 })(); 
