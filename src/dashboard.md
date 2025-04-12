@@ -44,7 +44,15 @@ import { createApiMap } from "./components/api-map-component.js";
 import { createUmapScatterPlot } from "./components/api-scatter-component.js";
 import { updateDetailsPanel, addContainerStyles } from "./components/ui-utils.js";
 import { setupEventHandlers } from "./components/event-handlers.js";
-import { fetchUmapData, transformUmapData } from './components/api/api-service.js';
+import { 
+  fetchUmapData, 
+  transformUmapData,
+  uploadSequence,
+  getUmapProjection,
+  getSimilarSequences
+} from './components/api/api-service.js';
+import { createUploadModal, readFastaFile, parseFastaContent } from './components/api/api-upload-component.js';
+import { createJobTracker } from './components/api/api-job-tracker.js';
 
 // Make FileAttachment available globally if it exists in this context
 // This helps our components detect if they're running in Observable
@@ -87,7 +95,9 @@ if (typeof FileAttachment !== 'undefined') {
         currentData: transformedData,
         selectedPoint: null,
         mapComponent: null,
-        scatterComponent: null
+        scatterComponent: null,
+        userSequence: null,
+        jobTracker: null
       };
       
       // Create map visualization using our new API map component
@@ -116,68 +126,112 @@ if (typeof FileAttachment !== 'undefined') {
       function selectPoint(index) {
         state.selectedPoint = index;
         
-        // Update map with selected point
-        state.mapComponent.updateMap(state.currentData, {
-          selectedIndex: index
-        });
+        // Find the point in our data
+        const point = state.currentData.find(d => d.index === index);
         
-        // Update scatter plot with selected point
-        state.scatterComponent.updateScatterPlot(state.currentData, {
-          selectedIndex: index
-        });
-        
-        // Update details panel with selected point data
-        const selectedData = state.currentData.find(d => d.index === index);
-        if (selectedData) {
-          updateDetailsPanel(selectedData);
+        if (point) {
+          console.log("Selected point:", point);
+          
+          // Update details panel
+          updateDetailsPanel(point);
+          
+          // Highlight point in map
+          if (state.mapComponent && state.mapComponent.highlightPoint) {
+            state.mapComponent.highlightPoint(index);
+          }
+          
+          // Highlight point in scatter plot
+          if (state.scatterComponent && state.scatterComponent.highlightPoint) {
+            state.scatterComponent.highlightPoint(index);
+          }
         }
       }
       
-      // Connect the FASTA upload button
-      document.getElementById("upload-fasta-button").addEventListener("click", function() {
-        // Trigger the hidden file input
-        document.getElementById("fasta-file-input").click();
+      // Set up the upload button
+      const uploadButton = document.getElementById('upload-fasta-button');
+      uploadButton.addEventListener('click', () => {
+        // Create and show the upload modal
+        const uploadModal = createUploadModal({
+          onUpload: async (file, model) => {
+            try {
+              console.log(`Processing file: ${file.name}, model: ${model}`);
+              showLoadingIndicator("Uploading sequence...");
+              
+              // Upload the sequence
+              const uploadResult = await uploadSequence(file, model);
+              console.log("Upload result:", uploadResult);
+              
+              // Create job tracker
+              const jobId = uploadResult.job_id;
+              state.jobTracker = createJobTracker(jobId, {
+                onStatusChange: (status, jobData) => {
+                  console.log(`Job status changed to: ${status}`);
+                },
+                onComplete: async (jobData) => {
+                  try {
+                    console.log("Job completed:", jobData);
+                    
+                    // Get job ID
+                    const jobId = jobData.job_id;
+                    
+                    // Get UMAP projection
+                    const projection = await getUmapProjection(jobId);
+                    
+                    // Get similar sequences with options
+                    const similarSequences = await getSimilarSequences(jobId, {
+                      n_results: 10,
+                      min_distance: -1,
+                      max_year: 0,
+                      include_unknown_dates: true
+                    });
+                    
+                    // Process and visualize results
+                    processSequenceResults(jobId, projection, similarSequences);
+                  } catch (error) {
+                    console.error("Error processing job results:", error);
+                    showErrorMessage("Error processing sequence results.");
+                  }
+                },
+                onError: (error) => {
+                  console.error("Job failed:", error);
+                  showErrorMessage("Sequence analysis failed. Please try again.");
+                }
+              });
+              
+              // Show the job tracker and start polling
+              state.jobTracker.show();
+              state.jobTracker.startPolling();
+              
+              // Hide the loading indicator
+              hideLoadingIndicator();
+            } catch (error) {
+              console.error("Error uploading sequence:", error);
+              hideLoadingIndicator();
+              showErrorMessage("Error uploading sequence. Please try again.");
+            }
+          },
+          onCancel: () => {
+            console.log("Upload canceled");
+          }
+        });
       });
       
-      // Handle file selection
-      document.getElementById("fasta-file-input").addEventListener("change", function(event) {
-        const file = event.target.files[0];
-        if (file) {
-          console.log("Selected FASTA file:", file.name);
-          // TODO: Implement FASTA file processing in Phase 2
-          showLoadingIndicator("Processing FASTA file...");
-          
-          // For now, just show a message that this feature is coming soon
-          setTimeout(() => {
-            hideLoadingIndicator();
-            showInfoMessage("FASTA upload functionality is coming soon in Phase 2!");
-            
-            // Reset the file input so the same file can be selected again
-            event.target.value = "";
-          }, 1500);
-        }
-      });
+      // Function to process sequence results
+      function processSequenceResults(jobId, projection, similarSequences) {
+        // For now, just show a success message
+        // In the next step, we'll implement visualization of the results
+        showInfoMessage("Sequence analysis complete! Visualization coming soon.");
+      }
       
-      console.log("Dashboard initialized successfully");
     } catch (error) {
       console.error("Error fetching API data:", error);
       hideLoadingIndicator();
-      showErrorMessage("Failed to fetch API data: " + error.message);
-      
-      // Display error message in the UI
-      document.getElementById("map-container").innerHTML = 
-        `<div class="p-4 text-red-500">Error loading map: ${error.message}</div>`;
-      document.getElementById("scatter-container").innerHTML = 
-        `<div class="p-4 text-red-500">Error loading scatter plot: ${error.message}</div>`;
+      showErrorMessage("Error fetching data from API. Please try again later.");
     }
   } catch (error) {
-    console.error("Error initializing dashboard:", error);
-    
-    // Display error message in the UI
-    document.getElementById("map-container").innerHTML = 
-      `<div class="p-4 text-red-500">Error loading map: ${error.message}</div>`;
-    document.getElementById("scatter-container").innerHTML = 
-      `<div class="p-4 text-red-500">Error loading scatter plot: ${error.message}</div>`;
+    console.error("Dashboard initialization error:", error);
+    hideLoadingIndicator();
+    showErrorMessage("Error initializing dashboard. Please refresh the page.");
   }
   
   // Function to show loading indicator

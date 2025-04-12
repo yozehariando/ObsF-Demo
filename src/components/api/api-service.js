@@ -293,10 +293,182 @@ function mockUmapData() {
   return mockData
 }
 
+/**
+ * Uploads a sequence for embedding
+ * @param {File} file - FASTA file to upload
+ * @param {string} model - Model to use for embedding (e.g., 'DNABERT-S')
+ * @returns {Promise<Object>} Job information including job_id
+ */
+async function uploadSequence(file, model) {
+  try {
+    console.log(`Uploading sequence using model: ${model}`)
+
+    // Create form data
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('model', model)
+
+    // Make API request
+    const response = await fetch(`${API_BASE_URL}/pathtrack/sequence/embed`, {
+      method: 'POST',
+      headers: {
+        'X-API-Key': API_KEY,
+      },
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Failed to upload sequence: ${response.status} ${response.statusText} - ${errorText}`
+      )
+    }
+
+    const data = await response.json()
+    console.log('Sequence upload successful, job ID:', data.job_id)
+    return data
+  } catch (error) {
+    console.error('Error uploading sequence:', error)
+    throw error
+  }
+}
+
+/**
+ * Checks the status of a job
+ * @param {string} jobId - Job ID to check
+ * @returns {Promise<Object>} Job status information
+ */
+async function checkJobStatus(jobId) {
+  try {
+    console.log(`Checking status for job: ${jobId}`)
+
+    // Make API request
+    const response = await fetch(`${API_BASE_URL}/pathtrack/jobs/${jobId}`, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+        'X-API-Key': API_KEY,
+      },
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Failed to check job status: ${response.status} ${response.statusText} - ${errorText}`
+      )
+    }
+
+    const data = await response.json()
+    console.log('Job status:', data.status)
+    return data
+  } catch (error) {
+    console.error('Error checking job status:', error)
+    throw error
+  }
+}
+
+/**
+ * Gets UMAP projection for a job
+ * @param {string} jobId - Job ID to get UMAP projection for
+ * @returns {Promise<Object>} UMAP projection data
+ */
+async function getUmapProjection(jobId) {
+  try {
+    console.log(`Getting UMAP projection for job: ${jobId}`)
+
+    // Make API request
+    const response = await fetch(
+      `${API_BASE_URL}/pathtrack/sequence/umap?job_id=${jobId}`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'X-API-Key': API_KEY,
+        },
+        // Empty body for POST request
+        body: '',
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Failed to get UMAP projection: ${response.status} ${response.statusText} - ${errorText}`
+      )
+    }
+
+    const data = await response.json()
+    console.log('UMAP projection received')
+    return data
+  } catch (error) {
+    console.error('Error getting UMAP projection:', error)
+    throw error
+  }
+}
+
+/**
+ * Gets similar sequences for a job
+ * @param {string} jobId - Job ID to find similar sequences for
+ * @param {Object} options - Options for similar sequence search
+ * @param {number} options.n_results - Maximum number of similar sequences to return
+ * @param {number} options.min_distance - Minimum distance threshold (-1 for no limit)
+ * @param {number} options.max_year - Maximum year filter (0 for no limit)
+ * @param {boolean} options.include_unknown_dates - Whether to include sequences with unknown dates
+ * @returns {Promise<Array>} Array of similar sequences
+ */
+async function getSimilarSequences(jobId, options = {}) {
+  try {
+    console.log(`Getting similar sequences for job: ${jobId}`)
+
+    // Default options
+    const defaultOptions = {
+      n_results: 10,
+      min_distance: -1,
+      max_year: 0,
+      include_unknown_dates: true,
+    }
+
+    // Merge with user options
+    const requestOptions = { ...defaultOptions, ...options }
+
+    // Make API request
+    const response = await fetch(
+      `${API_BASE_URL}/pathtrack/sequence/similar?job_id=${jobId}`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-API-Key': API_KEY,
+        },
+        body: JSON.stringify(requestOptions),
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Failed to get similar sequences: ${response.status} ${response.statusText} - ${errorText}`
+      )
+    }
+
+    const data = await response.json()
+    console.log(`Received ${data.length} similar sequences`)
+    return data
+  } catch (error) {
+    console.error('Error getting similar sequences:', error)
+    throw error
+  }
+}
+
 export {
   configureApiRequest,
   fetchApiData,
   fetchUmapData,
   transformUmapData,
   mockUmapData,
+  uploadSequence,
+  checkJobStatus,
+  getUmapProjection,
+  getSimilarSequences,
 }
