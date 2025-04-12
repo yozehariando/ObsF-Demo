@@ -4,7 +4,7 @@
  */
 
 // API configuration
-const API_BASE_URL = 'https://3.25.116.219/api/v1'
+const API_BASE_URL = 'http://54.169.186.71/api/v1'
 const API_KEY = 'test_key'
 
 /**

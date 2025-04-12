@@ -10,11 +10,11 @@ This dashboard demonstrates a modular approach to visualizing DNA mutation data.
 <div class="grid grid-cols-2 gap-4">
   <div class="card p-4">
     <h2 class="mb-4">Geographic Distribution</h2>
-    <div id="map-container" style="width: 100%; height: 400px; position: relative; overflow: hidden;"></div>
+    <div id="map-container" style="width: 100%; height: 450px; position: relative; overflow: hidden;"></div>
   </div>
   <div class="card p-4">
     <h2 class="mb-4">Mutation Clustering</h2>
-    <div id="scatter-container" style="width: 100%; height: 400px; position: relative; overflow: hidden;"></div>
+    <div id="scatter-container" style="width: 100%; height: 450px; position: relative; overflow: hidden;"></div>
   </div>
 </div>
 
@@ -43,6 +43,7 @@ This dashboard demonstrates a modular approach to visualizing DNA mutation data.
 ```js
 import * as d3 from "d3";
 import { createMap } from "./components/map-component.js";
+import { createApiMap } from "./components/api-map-component.js";
 import { createUmapScatterPlot } from "./components/api-scatter-component.js";
 import { updateDetailsPanel, addContainerStyles } from "./components/ui-utils.js";
 import { setupEventHandlers } from "./components/event-handlers.js";
@@ -92,9 +93,9 @@ if (typeof FileAttachment !== 'undefined') {
         scatterComponent: null
       };
       
-      // Create map visualization
+      // Create map visualization using our new API map component
       console.log("Creating map visualization...");
-      state.mapComponent = createMap("map-container", transformedData, {
+      state.mapComponent = createApiMap("map-container", transformedData, {
         colorScale: d3.scaleOrdinal(d3.schemeCategory10),
         onPointClick: (point) => {
           selectPoint(point.index);
