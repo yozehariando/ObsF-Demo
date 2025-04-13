@@ -7,6 +7,9 @@
 const API_BASE_URL = 'http://54.169.186.71/api/v1'
 const API_KEY = 'test_key'
 
+// Cache for sequence data
+let cachedSequences = null;
+
 /**
  * Configure API request with proper headers and parameters
  * @param {string} endpoint - API endpoint path
@@ -231,65 +234,49 @@ async function parseJsonlStream(response) {
 }
 
 /**
- * Get a consistent color for a country
- * @param {string} country - Country name
- * @returns {string} Hex color code
- */
-function getColorForCountry(country) {
-  // Simple hash function to generate consistent colors
-  if (!country) return '#cccccc' // Default gray for unknown
-
-  let hash = 0
-  for (let i = 0; i < country.length; i++) {
-    hash = country.charCodeAt(i) + ((hash << 5) - hash)
-  }
-
-  let color = '#'
-  for (let i = 0; i < 3; i++) {
-    const value = (hash >> (i * 8)) & 0xff
-    color += ('00' + value.toString(16)).substr(-2)
-  }
-
-  return color
-}
-
-/**
  * Generate mock UMAP data for testing
- * @returns {Array} Mock UMAP data
+ * @returns {Array} Array of mock UMAP data points
  */
 function mockUmapData() {
+  const mockData = []
   const countries = [
     'USA',
     'China',
-    'UK',
     'India',
     'Brazil',
-    'South Africa',
-    'Australia',
+    'Russia',
     'Japan',
+    'Germany',
+    'UK',
+    'France',
+    'Italy',
   ]
-  const years = ['2019', '2020', '2021', '2022', '2023']
+  const years = [
+    '2015-01-01',
+    '2016-01-01',
+    '2017-01-01',
+    '2018-01-01',
+    '2019-01-01',
+    '2020-01-01',
+    '2021-01-01',
+    '2022-01-01',
+    '2023-01-01',
+  ]
 
-  // Generate 100 mock data points
-  const mockData = Array.from({ length: 100 }, (_, i) => {
-    const country = countries[Math.floor(Math.random() * countries.length)]
-    const year = years[Math.floor(Math.random() * years.length)]
+  for (let i = 0; i < 500; i++) {
+    const x = (Math.random() * 2 - 1) * 10
+    const y = (Math.random() * 2 - 1) * 10
 
-    return {
-      accession: `MOCK-${i.toString().padStart(5, '0')}`,
-      sequence_hash: `hash-${i}`,
-      coordinates: [
-        Math.random() * 10 - 5, // X between -5 and 5
-        Math.random() * 10 - 5, // Y between -5 and 5
-      ],
-      first_country: country,
-      first_date: `${year}-${Math.floor(Math.random() * 12) + 1}-${
-        Math.floor(Math.random() * 28) + 1
-      }`,
-    }
-  })
+    mockData.push({
+      type: 'record',
+      sequence_hash: `mock-${i}`,
+      accession: `MOCK-${i}`,
+      coordinates: [x, y],
+      first_country: countries[Math.floor(Math.random() * countries.length)],
+      first_date: years[Math.floor(Math.random() * years.length)],
+    })
+  }
 
-  console.log('Generated mock data:', mockData.length, 'points')
   return mockData
 }
 
@@ -368,41 +355,33 @@ async function checkJobStatus(jobId) {
 }
 
 /**
- * Gets UMAP projection for a job
- * @param {string} jobId - Job ID to get UMAP projection for
- * @returns {Promise<Object>} UMAP projection data
+ * Get UMAP projection for a sequence
+ * @param {string} jobId - The job ID
+ * @returns {Promise<Object>} - UMAP projection data
  */
 async function getUmapProjection(jobId) {
   try {
     console.log(`Getting UMAP projection for job: ${jobId}`)
-
-    // Make API request
-    const response = await fetch(
-      `${API_BASE_URL}/pathtrack/sequence/umap?job_id=${jobId}`,
-      {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          'X-API-Key': API_KEY,
-        },
-        // Empty body for POST request
-        body: '',
-      }
-    )
-
+    
+    const response = await fetch(`${API_BASE_URL}/pathtrack/sequence/umap`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY,
+      },
+      body: JSON.stringify({ job_id: jobId })
+    });
+    
     if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(
-        `Failed to get UMAP projection: ${response.status} ${response.statusText} - ${errorText}`
-      )
+      throw new Error(`Failed to get UMAP projection: ${response.status}`);
     }
-
-    const data = await response.json()
-    console.log('UMAP projection received')
-    return data
+    
+    const data = await response.json();
+    console.log("UMAP projection received:", data);
+    return data;
   } catch (error) {
-    console.error('Error getting UMAP projection:', error)
-    throw error
+    console.error("Error getting UMAP projection:", error);
+    throw error;
   }
 }
 
@@ -461,6 +440,311 @@ async function getSimilarSequences(jobId, options = {}) {
   }
 }
 
+/**
+ * Gets embedding data for a job
+ * @param {string} jobId - Job ID to get embedding data for
+ * @returns {Promise<Object>} Embedding data
+ */
+async function getEmbedding(jobId) {
+  try {
+    console.log(`Getting embedding data for job: ${jobId}`)
+
+    const response = await fetch(
+      `${API_BASE_URL}/pathtrack/embedding/${jobId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': API_KEY,
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(
+        `Error getting embedding data: ${response.status} ${errorText}`
+      )
+    }
+
+    const data = await response.json()
+    console.log(
+      `Received embedding data with ${data.embedding.length} dimensions`
+    )
+    return data
+  } catch (error) {
+    console.error('Error getting embedding data:', error)
+    throw error
+  }
+}
+
+/**
+ * Fetch and cache all sequences for similarity search
+ * @returns {Promise<Array>} Array of all sequences
+ */
+async function fetchAllSequences() {
+  try {
+    if (cachedSequences) {
+      console.log("Using cached sequences");
+      return cachedSequences;
+    }
+    
+    console.log("Fetching all sequences for similarity search");
+    const sequences = await fetchUmapData();
+    
+    // Cache the sequences
+    cachedSequences = sequences;
+    console.log(`Cached ${sequences.length} sequences for similarity search`);
+    
+    return sequences;
+  } catch (error) {
+    console.error("Error fetching all sequences:", error);
+    throw error;
+  }
+}
+
+/**
+ * Find similar sequences for a job
+ * @param {string} jobId - Job ID to find similar sequences for
+ * @param {Object} options - Options for similarity search
+ * @param {number} options.limit - Maximum number of similar sequences to return
+ * @param {number} options.threshold - Similarity threshold (0-1)
+ * @returns {Promise<Array>} Array of similar sequences
+ */
+async function findSimilarSequencesForJob(jobId, options = {}) {
+  try {
+    console.log(`Finding similar sequences for job: ${jobId}`);
+    
+    // Default options
+    const defaultOptions = {
+      limit: 10,
+      threshold: 0.7
+    };
+    
+    // Merge with user options
+    const searchOptions = { ...defaultOptions, ...options };
+    
+    // Get embedding for the job
+    const embeddingData = await getEmbedding(jobId);
+    const userEmbedding = embeddingData.embedding;
+    
+    // Make sure we have all sequences
+    const allSequences = await fetchAllSequences();
+    
+    // Find similar sequences
+    const similarSequences = await findSimilarSequences(userEmbedding, allSequences, searchOptions);
+    
+    console.log(`Found ${similarSequences.length} similar sequences`);
+    return similarSequences;
+  } catch (error) {
+    console.error("Error finding similar sequences for job:", error);
+    throw error;
+  }
+}
+
+/**
+ * Find similar sequences based on embedding
+ * @param {Array} embedding - Embedding vector to compare against
+ * @param {Array} sequences - Array of sequences to search
+ * @param {Object} options - Search options
+ * @returns {Promise<Array>} Array of similar sequences
+ */
+async function findSimilarSequences(embedding, sequences, options) {
+  try {
+    console.log(`Finding similar sequences among ${sequences.length} sequences`);
+    
+    // Get UMAP projection for the embedding
+    const umapProjection = await getUmapProjectionForEmbedding(embedding);
+    
+    // Calculate similarity for each sequence
+    const similarSequences = sequences
+      .map(seq => {
+        // Skip sequences without coordinates
+        if (!seq.coordinates || !Array.isArray(seq.coordinates) || seq.coordinates.length < 2) {
+          return null;
+        }
+        
+        // Calculate Euclidean distance in UMAP space
+        const distance = calculateEuclideanDistance(
+          [umapProjection.x, umapProjection.y],
+          [seq.coordinates[0], seq.coordinates[1]]
+        );
+        
+        // Convert distance to similarity (inverse relationship)
+        // Normalize to 0-1 range where 1 is most similar
+        const similarity = 1 / (1 + distance);
+        
+        return {
+          id: seq.sequence_hash,
+          x: seq.coordinates[0],
+          y: seq.coordinates[1],
+          similarity,
+          accession: seq.accession,
+          first_country: seq.first_country,
+          first_date: seq.first_date
+        };
+      })
+      .filter(seq => seq !== null && seq.similarity >= options.threshold)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, options.limit);
+    
+    return similarSequences;
+  } catch (error) {
+    console.error("Error finding similar sequences:", error);
+    throw error;
+  }
+}
+
+/**
+ * Calculate Euclidean distance between two points
+ * @param {Array} point1 - First point coordinates
+ * @param {Array} point2 - Second point coordinates
+ * @returns {number} Euclidean distance
+ */
+function calculateEuclideanDistance(point1, point2) {
+  const squaredDiffs = point1.map((coord, i) => {
+    const diff = coord - point2[i];
+    return diff * diff;
+  });
+  
+  const sumSquaredDiffs = squaredDiffs.reduce((sum, diff) => sum + diff, 0);
+  return Math.sqrt(sumSquaredDiffs);
+}
+
+/**
+ * Get UMAP projection for an embedding
+ * @param {Array} embedding - Embedding vector
+ * @returns {Promise<Object>} UMAP projection
+ */
+async function getUmapProjectionForEmbedding(embedding) {
+  // This is a mock implementation
+  // In a real implementation, you would send the embedding to the API
+  // and get back the UMAP projection
+  
+  // For now, we'll just return random coordinates
+  return {
+    x: Math.random() * 10 - 5,
+    y: Math.random() * 10 - 5
+  };
+}
+
+/**
+ * Visualize similarity connections between sequences
+ * @param {Object} scatterComponent - Scatter plot component
+ * @param {Object} userSequence - User sequence object
+ * @param {Array} similarSequences - Array of similar sequences
+ * @param {Object} options - Visualization options
+ */
+function visualizeSimilarityConnections(scatterComponent, userSequence, similarSequences, options = {}) {
+  try {
+    console.log("Visualizing similarity connections");
+    
+    // Default options
+    const defaultOptions = {
+      lineColor: 'rgba(255, 0, 0, 0.3)',
+      lineWidth: 1,
+      minOpacity: 0.1,
+      maxOpacity: 0.8
+    };
+    
+    // Merge with user options
+    const visualOptions = { ...defaultOptions, ...options };
+    
+    // Get the SVG element from the scatter component
+    const svg = scatterComponent.getSvg();
+    
+    // Remove any existing connections
+    svg.selectAll('.similarity-connection').remove();
+    
+    // Create a group for connections if it doesn't exist
+    let connectionsGroup = svg.select('.connections-group');
+    if (connectionsGroup.empty()) {
+      connectionsGroup = svg.append('g')
+        .attr('class', 'connections-group')
+        .attr('pointer-events', 'none'); // Don't interfere with mouse events
+    }
+    
+    // Add connections between user sequence and similar sequences
+    similarSequences.forEach(seq => {
+      // Calculate opacity based on similarity
+      const opacity = visualOptions.minOpacity + 
+        (seq.similarity * (visualOptions.maxOpacity - visualOptions.minOpacity));
+      
+      // Get screen coordinates
+      const userPoint = scatterComponent.getPointCoordinates(userSequence.id);
+      const seqPoint = scatterComponent.getPointCoordinates(seq.id);
+      
+      if (userPoint && seqPoint) {
+        connectionsGroup.append('line')
+          .attr('class', 'similarity-connection')
+          .attr('x1', userPoint.x)
+          .attr('y1', userPoint.y)
+          .attr('x2', seqPoint.x)
+          .attr('y2', seqPoint.y)
+          .attr('stroke', visualOptions.lineColor)
+          .attr('stroke-width', visualOptions.lineWidth)
+          .attr('stroke-opacity', opacity)
+          .attr('data-source', userSequence.id)
+          .attr('data-target', seq.id)
+          .attr('data-similarity', seq.similarity);
+      }
+    });
+    
+    console.log(`Added ${similarSequences.length} similarity connections`);
+  } catch (error) {
+    console.error("Error visualizing similarity connections:", error);
+  }
+}
+
+/**
+ * Highlight a similar sequence in the visualization
+ * @param {Object} scatterComponent - Scatter plot component
+ * @param {string} sequenceId - ID of the sequence to highlight
+ * @param {boolean} highlight - Whether to highlight or unhighlight
+ */
+function highlightSimilarSequence(scatterComponent, sequenceId, highlight) {
+  try {
+    // Get the SVG element from the scatter component
+    const svg = scatterComponent.getSvg();
+    
+    // Highlight the point
+    scatterComponent.highlightPoint(sequenceId, highlight);
+    
+    // Highlight connections
+    svg.selectAll('.similarity-connection')
+      .filter(function() {
+        const source = this.getAttribute('data-source');
+        const target = this.getAttribute('data-target');
+        return source === sequenceId || target === sequenceId;
+      })
+      .attr('stroke-width', highlight ? 3 : 1)
+      .attr('stroke-opacity', highlight ? 1 : function() {
+        const similarity = parseFloat(this.getAttribute('data-similarity'));
+        return 0.1 + (similarity * 0.7); // Scale from 0.1 to 0.8
+      });
+  } catch (error) {
+    console.error("Error highlighting similar sequence:", error);
+  }
+}
+
+/**
+ * Toggle visibility of similarity connections
+ * @param {Object} scatterComponent - Scatter plot component
+ * @param {boolean} show - Whether to show or hide connections
+ */
+function toggleSimilarityConnections(scatterComponent, show) {
+  try {
+    // Get the SVG element from the scatter component
+    const svg = scatterComponent.getSvg();
+    
+    // Show or hide connections
+    svg.selectAll('.similarity-connection')
+      .style('display', show ? 'inline' : 'none');
+  } catch (error) {
+    console.error("Error toggling similarity connections:", error);
+  }
+}
+
 export {
   configureApiRequest,
   fetchApiData,
@@ -471,4 +755,11 @@ export {
   checkJobStatus,
   getUmapProjection,
   getSimilarSequences,
+  getEmbedding,
+  fetchAllSequences,
+  findSimilarSequencesForJob,
+  findSimilarSequences,
+  visualizeSimilarityConnections,
+  highlightSimilarSequence,
+  toggleSimilarityConnections
 }

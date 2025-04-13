@@ -20,6 +20,7 @@ Phase 2 builds upon our existing API integration to allow users to:
 ### Components to Enhance
 - ⏳ Dashboard integration - Connect upload workflow to visualization
 - 🔜 Visualization components - Display user sequences and similarities
+- 🔜 `api-similarity-service.js` - New component for similarity search
 
 ## 3. API Endpoint Flow
 
@@ -41,9 +42,9 @@ The complete workflow uses these endpoints in sequence:
    - POST request with job_id and filtering options
    - Returns similar sequences with metadata and similarity scores
 
-5. **Get Embedding Data** (`/pathtrack/embedding/{job_id}`)
-   - Retrieves raw embedding vector data
-   - Useful for advanced analysis and visualization
+5. **Get All Sequences** (`/pathtrack/umap/all`)
+   - GET request to retrieve all sequences
+   - Store in JSON format for similarity search
 
 ## 4. Implementation Steps
 
@@ -53,27 +54,34 @@ The complete workflow uses these endpoints in sequence:
 - ✅ Connect to API for sequence submission
 - ✅ Implement job tracking system
 
-### Step 2: Results Processing 🔜
-- Create `processSequenceResults` function to:
-  - Process UMAP projection data
-  - Format similar sequences data
-  - Prepare visualization updates
-  - Update state with user sequence information
+### Step 2: Implement Similarity Search ✅
+- ✅ Create `api-similarity-service.js` to:
+  - ✅ Fetch and store data from 'all' endpoint
+  - ✅ Implement similarity search against stored data
+  - ✅ Process and format similarity results
+  - ✅ Provide interface for visualization components
 
-### Step 3: Visualization Integration 🔜
+### Step 3: Results Processing ✅
+- ✅ Create `api-results-processor.js` to:
+  - ✅ Process UMAP projection data
+  - ✅ Format similar sequences data
+  - ✅ Generate details panel HTML
+  - ✅ Prepare visualization updates
+
+### Step 4: Visualization Integration 🔜
 - Add user sequence marker with distinct styling
 - Highlight similar sequences with visual connections
 - Update both map and scatter plot components
 - Add toggle for showing/hiding similarity connections
 
-### Step 4: UI Enhancements 🔜
+### Step 5: UI Enhancements 🔜
 - Create similarity panel showing top matches
 - Add sequence comparison view
 - Implement filtering options for similar sequences
-- Add embedding heatmap visualization
+- Add embedding visualization
 
-### Step 5: Advanced Features 🔜
-- Implement embedding heatmap for detailed analysis
+### Step 6: Advanced Features 🔜
+- Implement embedding visualization for detailed analysis
 - Add sequence export functionality
 - Create history of analyzed sequences
 - Enable saving/loading of analysis results
@@ -101,308 +109,73 @@ The complete workflow uses these endpoints in sequence:
 5. **Interactive Analysis**
    - User can click on similar sequences for comparison
    - Filter options allow refining similarity results
-   - "View Embedding Details" button shows embedding heatmap
+   - "View Embedding Details" button shows embedding visualization
 
 ## 6. Implementation Details
 
 ### 6.1 State Management
 
 We'll extend the dashboard state to include:
+- User sequence data
+- Similar sequences array
+- Job tracker reference
+- Similarity visualization toggle
+- Embedding data for visualization
 
-```javascript
-// Add to existing state object
-state.userSequence = null;        // Current user sequence data
-state.similarSequences = [];      // Array of similar sequences
-state.jobTracker = null;          // Reference to job tracker
-state.showSimilarities = true;    // Toggle for similarity visualization
-state.embeddingData = null;       // Raw embedding data for heatmap
-```
+### 6.2 Similarity Search Implementation
 
-### 6.2 Results Processing Function
+The similarity search will:
+1. Fetch data from 'all' endpoint
+2. Store in JSON format for efficient access
+3. When user uploads a sequence:
+   - Search in stored JSON data
+   - Calculate similarity based on sequence features
+   - Return top matches with similarity scores
+4. Display results in visualization and similarity panel
 
-```javascript
-async function processSequenceResults(jobId, projection, similarSequences) {
-  // 1. Extract user sequence data
-  const userSequence = {
-    id: jobId,
-    x: projection.x,
-    y: projection.y,
-    isUserSequence: true
-  };
-  
-  // 2. Format similar sequences
-  const formattedSimilarSequences = similarSequences.map(seq => ({
-    ...seq,
-    isSimilar: true,
-    similarityScore: seq.distance
-  }));
-  
-  // 3. Update state
-  state.userSequence = userSequence;
-  state.similarSequences = formattedSimilarSequences;
-  
-  // 4. Update visualizations
-  updateVisualizationsWithUserData(userSequence, formattedSimilarSequences);
-  
-  // 5. Show similarity panel
-  showSimilarityPanel(formattedSimilarSequences);
-  
-  // 6. Fetch embedding data for heatmap (optional, can be loaded on demand)
-  try {
-    const embeddingData = await getEmbeddingData(jobId);
-    state.embeddingData = embeddingData;
-    // Add "View Embedding Details" button to UI
-    addEmbeddingDetailsButton();
-  } catch (error) {
-    console.error("Error fetching embedding data:", error);
-    // Non-critical error, don't show error message to user
-  }
-}
-```
+### 6.3 Visualization Updates
 
-### 6.3 Visualization Update Function
-
-```javascript
-function updateVisualizationsWithUserData(userSequence, similarSequences) {
-  // 1. Add user sequence to map
-  state.mapComponent.addUserSequence(userSequence);
-  
-  // 2. Add user sequence to scatter plot
-  state.scatterComponent.addUserSequence(userSequence);
-  
-  // 3. Highlight similar sequences
-  state.mapComponent.highlightSimilarSequences(similarSequences);
-  state.scatterComponent.highlightSimilarSequences(similarSequences);
-  
-  // 4. Update details panel
-  updateDetailsPanel(userSequence);
-}
-```
+The visualization components will be enhanced to:
+1. Add user sequence with distinct styling
+2. Highlight similar sequences
+3. Draw connections between user sequence and similar sequences
+4. Update details panel with similarity information
+5. Provide toggle for showing/hiding similarity connections
 
 ### 6.4 Similarity Panel
 
-```javascript
-function showSimilarityPanel(similarSequences) {
-  // Create panel
-  const panel = document.createElement('div');
-  panel.className = 'similarity-panel';
-  panel.innerHTML = `
-    <h3>Similar Sequences</h3>
-    <div class="similarity-list">
-      ${similarSequences.map(seq => `
-        <div class="similarity-item" data-id="${seq.id}">
-          <div class="similarity-score">${(1-seq.distance).toFixed(2)}</div>
-          <div class="similarity-details">
-            <div>${seq.accession || 'Unknown'}</div>
-            <div>${seq.country || 'Unknown'}</div>
-          </div>
-        </div>
-      `).join('')}
-    </div>
-  `;
-  
-  // Add to dashboard
-  document.querySelector('.dashboard-container').appendChild(panel);
-  
-  // Add event listeners
-  panel.querySelectorAll('.similarity-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const id = item.dataset.id;
-      const sequence = similarSequences.find(s => s.id === id);
-      highlightSequence(sequence);
-      updateDetailsPanel(sequence);
-    });
-  });
-}
-```
+The similarity panel will:
+1. Show list of similar sequences
+2. Display similarity scores
+3. Include metadata (accession, country, date)
+4. Allow clicking to highlight specific sequences
+5. Provide filtering and sorting options
 
-### 6.5 Embedding Heatmap Visualization
+### 6.5 Embedding Visualization
 
-```javascript
-function createEmbeddingHeatmap(embeddingData) {
-  // Create container
-  const container = document.createElement('div');
-  container.className = 'embedding-heatmap-container';
-  
-  // Create header
-  const header = document.createElement('div');
-  header.className = 'embedding-heatmap-header';
-  header.innerHTML = `
-    <h3>Embedding Heatmap</h3>
-    <div class="embedding-heatmap-info">
-      <div>Model: ${embeddingData.embedding_model}</div>
-      <div>Dimensions: ${embeddingData.shape[0]}</div>
-    </div>
-  `;
-  container.appendChild(header);
-  
-  // Create heatmap
-  const heatmapContainer = document.createElement('div');
-  heatmapContainer.className = 'heatmap';
-  
-  // Calculate grid dimensions
-  const dimensions = embeddingData.embedding.length;
-  const gridSize = Math.ceil(Math.sqrt(dimensions));
-  
-  // Set grid layout
-  heatmapContainer.style.display = 'grid';
-  heatmapContainer.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
-  
-  // Find min and max values for color scaling
-  const min = Math.min(...embeddingData.embedding);
-  const max = Math.max(...embeddingData.embedding);
-  
-  // Create cells
-  embeddingData.embedding.forEach((value, index) => {
-    const cell = document.createElement('div');
-    cell.className = 'heatmap-cell';
-    
-    // Normalize value between 0 and 1
-    const normalizedValue = (value - min) / (max - min);
-    
-    // Generate color (blue to red gradient)
-    const r = Math.floor(normalizedValue * 255);
-    const b = Math.floor((1 - normalizedValue) * 255);
-    cell.style.backgroundColor = `rgb(${r}, 0, ${b})`;
-    
-    // Add tooltip with dimension index and value
-    cell.title = `Dimension ${index}: ${value.toFixed(4)}`;
-    
-    heatmapContainer.appendChild(cell);
-  });
-  
-  container.appendChild(heatmapContainer);
-  
-  // Add controls
-  const controls = document.createElement('div');
-  controls.className = 'embedding-heatmap-controls';
-  controls.innerHTML = `
-    <button id="sort-dimensions">Sort by Value</button>
-    <button id="group-dimensions">Group Similar Dimensions</button>
-    <div class="zoom-controls">
-      <label>Zoom: </label>
-      <input type="range" min="1" max="5" value="1" id="heatmap-zoom">
-    </div>
-  `;
-  container.appendChild(controls);
-  
-  // Add event listeners for controls
-  // (Implementation details omitted for brevity)
-  
-  return container;
-}
-
-function showEmbeddingHeatmap() {
-  if (!state.embeddingData) {
-    console.error("No embedding data available");
-    return;
-  }
-  
-  // Create modal
-  const modal = document.createElement('div');
-  modal.className = 'modal embedding-heatmap-modal';
-  
-  // Create modal content
-  const modalContent = document.createElement('div');
-  modalContent.className = 'modal-content';
-  
-  // Add close button
-  const closeButton = document.createElement('span');
-  closeButton.className = 'close-button';
-  closeButton.innerHTML = '&times;';
-  closeButton.addEventListener('click', () => {
-    modal.remove();
-  });
-  modalContent.appendChild(closeButton);
-  
-  // Create heatmap
-  const heatmap = createEmbeddingHeatmap(state.embeddingData);
-  modalContent.appendChild(heatmap);
-  
-  // Add modal to page
-  modal.appendChild(modalContent);
-  document.body.appendChild(modal);
-}
-
-function addEmbeddingDetailsButton() {
-  const button = document.createElement('button');
-  button.id = 'view-embedding-details';
-  button.className = 'dashboard-button';
-  button.textContent = 'View Embedding Details';
-  button.addEventListener('click', showEmbeddingHeatmap);
-  
-  // Add to dashboard controls
-  document.querySelector('.dashboard-controls').appendChild(button);
-}
-```
-
-### 6.6 Get Raw Embedding Data
-
-```javascript
-async function getEmbeddingData(jobId) {
-  try {
-    // 1. Show loading indicator
-    showLoadingIndicator("Retrieving embedding data...");
-    
-    // 2. Call API to get embedding data
-    const embeddingData = await getEmbedding(jobId);
-    
-    // 3. Process embedding data (for advanced features)
-    console.log("Retrieved embedding data:", embeddingData);
-    
-    // 4. Hide loading indicator
-    hideLoadingIndicator();
-    
-    // 5. Return data for further processing
-    return embeddingData;
-  } catch (error) {
-    console.error("Error retrieving embedding data:", error);
-    hideLoadingIndicator();
-    showErrorMessage("Error retrieving embedding data.");
-    return null;
-  }
-}
-```
+The embedding visualization will:
+1. Show the embedding vector as a visual representation
+2. Provide insight into sequence characteristics
+3. Include controls for exploring the embedding
+4. Help users understand the basis for similarity calculations
 
 ## 7. Component Extensions
 
 ### 7.1 Map Component Extensions
 
-We'll need to extend the map component with these methods:
-
-```javascript
-// Add to map component
-addUserSequence(userSequence) {
-  // Add user sequence with distinct styling
-}
-
-highlightSimilarSequences(sequences) {
-  // Highlight similar sequences and draw connections
-}
-
-toggleSimilarityConnections(show) {
-  // Show/hide similarity connections
-}
-```
+We'll extend the map component with these capabilities:
+- Add user sequence with distinct styling
+- Highlight similar sequences
+- Draw connections between user sequence and similar sequences
+- Toggle similarity connections visibility
 
 ### 7.2 Scatter Plot Extensions
 
-Similarly, we'll extend the scatter plot:
-
-```javascript
-// Add to scatter plot component
-addUserSequence(userSequence) {
-  // Add user sequence with distinct styling
-}
-
-highlightSimilarSequences(sequences) {
-  // Highlight similar sequences and draw connections
-}
-
-toggleSimilarityConnections(show) {
-  // Show/hide similarity connections
-}
-```
+Similarly, we'll extend the scatter plot with:
+- Add user sequence with distinct styling
+- Highlight similar sequences
+- Draw connections between user sequence and similar sequences
+- Toggle similarity connections visibility
 
 ## 8. UI Controls
 
@@ -417,8 +190,8 @@ We'll add these UI controls to the dashboard:
    - Option to adjust connection line thickness based on similarity
 
 3. **Embedding Controls**
-   - "View Embedding Details" button to show heatmap
-   - Controls within heatmap for sorting and grouping dimensions
+   - Button to view embedding visualization
+   - Controls for exploring embedding dimensions
 
 4. **Export Controls**
    - Button to export analysis results
@@ -431,7 +204,7 @@ We'll add these UI controls to the dashboard:
 - Test with various FASTA file formats and sizes
 - Ensure error handling for all API requests
 - Test performance with multiple similar sequences
-- Verify heatmap visualization with different embedding sizes
+- Verify similarity search accuracy and performance
 
 ## 10. Success Criteria
 
@@ -440,7 +213,7 @@ Phase 2 will be considered successful when:
 - User sequences are properly visualized in both map and scatter plot
 - Similar sequences are identified and highlighted
 - Users can interact with similar sequences to see details
-- The embedding heatmap provides insight into sequence characteristics
+- The embedding visualization provides insight into sequence characteristics
 - The system handles errors gracefully with clear feedback
 
 ## 11. Next Steps After Phase 2
@@ -449,7 +222,7 @@ Phase 2 will be considered successful when:
 - Create sequence export functionality
 - Enhance visualization with animations and tooltips
 - Optimize performance for large datasets
-- Implement additional embedding visualizations (dimension importance, 3D explorer)
+- Implement additional embedding visualizations
 
 ---
 

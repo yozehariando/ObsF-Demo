@@ -1,0 +1,250 @@
+/* Sequence Analysis Styles */
+
+/* Similarity Panel */
+.similarity-panel {
+  position: absolute;
+  top: 70px;
+  right: 20px;
+  width: 300px;
+  max-height: 80vh;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.similarity-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #ddd;
+}
+
+.similarity-panel-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.similarity-panel .close-button {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #666;
+}
+
+.similarity-filter {
+  padding: 10px 15px;
+  border-bottom: 1px solid #ddd;
+}
+
+.similarity-filter label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 14px;
+  color: #555;
+}
+
+.similarity-filter input {
+  width: 100%;
+}
+
+.similarity-list {
+  overflow-y: auto;
+  max-height: calc(80vh - 120px);
+}
+
+.similarity-item {
+  display: flex;
+  padding: 10px 15px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.similarity-item:hover {
+  background-color: #f5f5f5;
+}
+
+.similarity-score {
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #3498db;
+  color: white;
+  border-radius: 50%;
+  font-weight: bold;
+  margin-right: 15px;
+}
+
+.similarity-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.similarity-accession {
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.similarity-metadata {
+  display: flex;
+  font-size: 12px;
+  color: #666;
+}
+
+.similarity-country {
+  margin-right: 10px;
+}
+
+.no-similar-sequences {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+}
+
+/* Embedding Heatmap */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.3);
+  width: 90%;
+  max-width: 1000px;
+  max-height: 90vh;
+  overflow: hidden;
+  position: relative;
+}
+
+.modal .close-button {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  z-index: 10;
+}
+
+.embedding-heatmap-container {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  height: 90vh;
+  max-height: 800px;
+}
+
+.embedding-heatmap-header {
+  margin-bottom: 20px;
+}
+
+.embedding-heatmap-header h3 {
+  margin: 0 0 10px 0;
+  font-size: 20px;
+}
+
+.embedding-heatmap-info {
+  display: flex;
+  gap: 20px;
+  font-size: 14px;
+  color: #666;
+}
+
+.heatmap {
+  overflow: auto;
+  flex: 1;
+  padding: 10px;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+}
+
+.heatmap-cell {
+  width: 20px;
+  height: 20px;
+  margin: 1px;
+  border-radius: 2px;
+}
+
+.embedding-heatmap-controls {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+}
+
+.embedding-heatmap-controls button {
+  padding: 8px 12px;
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.zoom-controls label {
+  margin-right: 10px;
+}
+
+/* User Sequence Styling */
+.user-sequence-marker {
+  background-color: #e74c3c;
+  border: 2px solid white;
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.5);
+}
+
+.user-sequence-point {
+  background-color: #e74c3c !important;
+  border-color: white !important;
+}
+
+.similarity-connection {
+  stroke: rgba(231, 76, 60, 0.7);
+  stroke-width: 2;
+  stroke-dasharray: 5, 5;
+  pointer-events: none;
+}
+
+/* Dashboard Button */
+.dashboard-button {
+  padding: 8px 15px;
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-right: 10px;
+}
+
+.dashboard-button:hover {
+  background-color: #2980b9;
+}
