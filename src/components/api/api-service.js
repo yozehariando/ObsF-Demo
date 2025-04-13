@@ -3,6 +3,8 @@
  * Handles API requests, configuration, and data transformation
  */
 
+import * as d3 from 'd3';
+
 // API configuration
 const API_BASE_URL = 'http://54.169.186.71/api/v1'
 const API_KEY = 'test_key'
@@ -360,83 +362,108 @@ async function checkJobStatus(jobId) {
  * @returns {Promise<Object>} - UMAP projection data
  */
 async function getUmapProjection(jobId) {
+  console.log(`Getting UMAP projection for job ${jobId}`);
+  
   try {
-    console.log(`Getting UMAP projection for job: ${jobId}`)
+    // Use the correct URL format with job_id as a query parameter
+    const url = `${API_BASE_URL}/pathtrack/sequence/umap?job_id=${jobId}`;
     
-    const response = await fetch(`${API_BASE_URL}/pathtrack/sequence/umap`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': API_KEY,
+        'accept': 'application/json',
+        'X-API-Key': API_KEY
       },
-      body: JSON.stringify({ job_id: jobId })
+      // Send an empty body as in the CURL example
+      body: ''
     });
     
     if (!response.ok) {
-      throw new Error(`Failed to get UMAP projection: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`Error getting UMAP projection: ${response.status} ${response.statusText}`, errorText);
+      throw new Error(`Failed to get UMAP projection: ${response.status} ${response.statusText}`);
     }
     
     const data = await response.json();
-    console.log("UMAP projection received:", data);
+    console.log('UMAP projection data:', data);
     return data;
   } catch (error) {
-    console.error("Error getting UMAP projection:", error);
+    console.error('Error in getUmapProjection:', error);
     throw error;
   }
 }
 
 /**
- * Gets similar sequences for a job
- * @param {string} jobId - Job ID to find similar sequences for
- * @param {Object} options - Options for similar sequence search
- * @param {number} options.n_results - Maximum number of similar sequences to return
- * @param {number} options.min_distance - Minimum distance threshold (-1 for no limit)
- * @param {number} options.max_year - Maximum year filter (0 for no limit)
- * @param {boolean} options.include_unknown_dates - Whether to include sequences with unknown dates
- * @returns {Promise<Array>} Array of similar sequences
+ * Get similar sequences for a job
+ * @param {string} jobId - The job ID
+ * @param {Object} options - Options for similar sequences query
+ * @returns {Promise<Array>} - Array of similar sequences
  */
 async function getSimilarSequences(jobId, options = {}) {
   try {
-    console.log(`Getting similar sequences for job: ${jobId}`)
-
+    console.log(`Getting similar sequences for job ${jobId} with options:`, options);
+    
     // Default options
     const defaultOptions = {
       n_results: 10,
       min_distance: -1,
       max_year: 0,
-      include_unknown_dates: true,
-    }
-
+      include_unknown_dates: true
+    };
+    
     // Merge with user options
-    const requestOptions = { ...defaultOptions, ...options }
-
-    // Make API request
-    const response = await fetch(
-      `${API_BASE_URL}/pathtrack/sequence/similar?job_id=${jobId}`,
-      {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          'Content-Type': 'application/json',
-          'X-API-Key': API_KEY,
-        },
-        body: JSON.stringify(requestOptions),
-      }
-    )
-
+    const queryOptions = { ...defaultOptions, ...options };
+    
+    // Prepare request - job_id should be in the query string, not the body
+    const url = `${API_BASE_URL}/pathtrack/sequence/similar?job_id=${encodeURIComponent(jobId)}`;
+    
+    console.log(`Sending request to: ${url}`);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY
+      },
+      body: JSON.stringify({
+        n_results: queryOptions.n_results,
+        min_distance: queryOptions.min_distance,
+        max_year: queryOptions.max_year,
+        include_unknown_dates: queryOptions.include_unknown_dates
+      })
+    });
+    
     if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(
-        `Failed to get similar sequences: ${response.status} ${response.statusText} - ${errorText}`
-      )
+      const errorText = await response.text();
+      throw new Error(`Failed to get similar sequences: ${response.status} - ${errorText}`);
     }
-
-    const data = await response.json()
-    console.log(`Received ${data.length} similar sequences`)
-    return data
+    
+    const data = await response.json();
+    console.log("Similar sequences response:", data);
+    
+    // Check if the response has the expected structure
+    if (!data || !data.result) {
+      console.warn("API response doesn't contain result field, returning empty array");
+      return [];
+    }
+    
+    // The API returns the similar sequences in the 'result' field
+    const similarSequences = Array.isArray(data.result) ? data.result : [];
+    
+    // Map the API response to our expected format
+    return similarSequences.map(seq => ({
+      sequence_hash: seq.id,
+      accession: seq.metadata?.accessions?.[0] || 'Unknown',
+      first_country: seq.metadata?.first_country || 'Unknown',
+      first_date: seq.metadata?.first_year ? `${seq.metadata.first_year}` : 'Unknown',
+      coordinates: [Math.random() * 10 - 5, Math.random() * 10 - 5], // Placeholder coordinates
+      similarity: seq.similarity || 0,
+      distance: seq.distance || 0
+    }));
   } catch (error) {
-    console.error('Error getting similar sequences:', error)
-    throw error
+    console.error("Error getting similar sequences:", error);
+    // Return empty array instead of throwing to make the code more robust
+    return [];
   }
 }
 
@@ -629,119 +656,250 @@ async function getUmapProjectionForEmbedding(embedding) {
 }
 
 /**
- * Visualize similarity connections between sequences
- * @param {Object} scatterComponent - Scatter plot component
- * @param {Object} userSequence - User sequence object
+ * Visualizes connections between a user sequence and similar sequences
+ * @param {Object} scatterComponent - The scatter plot component
+ * @param {Object} userSequence - The user's sequence data
  * @param {Array} similarSequences - Array of similar sequences
  * @param {Object} options - Visualization options
  */
 function visualizeSimilarityConnections(scatterComponent, userSequence, similarSequences, options = {}) {
+  console.log('Visualizing similarity connections');
+  
   try {
-    console.log("Visualizing similarity connections");
-    
     // Default options
     const defaultOptions = {
       lineColor: 'rgba(255, 0, 0, 0.3)',
       lineWidth: 1,
-      minOpacity: 0.1,
-      maxOpacity: 0.8
+      minSimilarity: 0,
+      maxConnections: 10
     };
     
     // Merge with user options
     const visualOptions = { ...defaultOptions, ...options };
     
-    // Get the SVG element from the scatter component
-    const svg = scatterComponent.getSvg();
+    // Check if the component is valid
+    if (!scatterComponent) {
+      console.error('Invalid scatter component');
+      return;
+    }
+    
+    // Get the SVG element - handle different component implementations
+    let svg;
+    if (typeof scatterComponent.getSvg === 'function') {
+      // If the component has a getSvg method, use it
+      svg = scatterComponent.getSvg();
+    } else if (scatterComponent.svg) {
+      // If the component has an svg property, use it
+      svg = scatterComponent.svg;
+    } else {
+      // Try to find the SVG element within the component's container
+      const containerId = scatterComponent.containerId || scatterComponent.id;
+      if (containerId) {
+        const container = document.getElementById(containerId);
+        if (container) {
+          svg = d3.select(container).select('svg');
+        }
+      }
+      
+      // If we still don't have an SVG, try one more approach
+      if (!svg || svg.empty()) {
+        // Try to get the container element directly
+        const container = scatterComponent.container || 
+                         (scatterComponent.element ? d3.select(scatterComponent.element) : null);
+        
+        if (container) {
+          svg = container.select('svg');
+        }
+      }
+    }
+    
+    // If we still couldn't find the SVG, log an error and return
+    if (!svg || (svg.empty && svg.empty())) {
+      console.error('Could not find SVG element in scatter component');
+      return;
+    }
+    
+    // Check if we have valid user sequence and similar sequences
+    if (!userSequence || !similarSequences || !Array.isArray(similarSequences) || similarSequences.length === 0) {
+      console.warn('No valid sequences to visualize connections');
+      return;
+    }
     
     // Remove any existing connections
     svg.selectAll('.similarity-connection').remove();
     
-    // Create a group for connections if it doesn't exist
-    let connectionsGroup = svg.select('.connections-group');
-    if (connectionsGroup.empty()) {
-      connectionsGroup = svg.append('g')
-        .attr('class', 'connections-group')
-        .attr('pointer-events', 'none'); // Don't interfere with mouse events
+    // Get the scales from the component
+    let xScale, yScale;
+    
+    if (typeof scatterComponent.getScales === 'function') {
+      const scales = scatterComponent.getScales();
+      xScale = scales.x;
+      yScale = scales.y;
+    } else {
+      // Try to access scales directly
+      xScale = scatterComponent.xScale || scatterComponent.x;
+      yScale = scatterComponent.yScale || scatterComponent.y;
     }
     
-    // Add connections between user sequence and similar sequences
-    similarSequences.forEach(seq => {
-      // Calculate opacity based on similarity
-      const opacity = visualOptions.minOpacity + 
-        (seq.similarity * (visualOptions.maxOpacity - visualOptions.minOpacity));
+    // If we still don't have scales, try to recreate them
+    if (!xScale || !yScale) {
+      console.warn('Could not find scales in scatter component, attempting to recreate');
       
-      // Get screen coordinates
-      const userPoint = scatterComponent.getPointCoordinates(userSequence.id);
-      const seqPoint = scatterComponent.getPointCoordinates(seq.id);
+      // Get the dimensions of the SVG
+      const width = parseInt(svg.attr('width'), 10) || 500;
+      const height = parseInt(svg.attr('height'), 10) || 400;
       
-      if (userPoint && seqPoint) {
-        connectionsGroup.append('line')
-          .attr('class', 'similarity-connection')
-          .attr('x1', userPoint.x)
-          .attr('y1', userPoint.y)
-          .attr('x2', seqPoint.x)
-          .attr('y2', seqPoint.y)
-          .attr('stroke', visualOptions.lineColor)
-          .attr('stroke-width', visualOptions.lineWidth)
-          .attr('stroke-opacity', opacity)
-          .attr('data-source', userSequence.id)
-          .attr('data-target', seq.id)
-          .attr('data-similarity', seq.similarity);
-      }
+      // Create simple scales based on the data
+      const allPoints = [userSequence, ...similarSequences];
+      const xExtent = d3.extent(allPoints, d => d.X || d.x || 0);
+      const yExtent = d3.extent(allPoints, d => d.Y || d.y || 0);
+      
+      xScale = d3.scaleLinear()
+        .domain(xExtent)
+        .range([50, width - 50]);
+      
+      yScale = d3.scaleLinear()
+        .domain(yExtent)
+        .range([height - 50, 50]);
+    }
+    
+    // Filter and sort similar sequences
+    const filteredSequences = similarSequences
+      .filter(seq => seq.similarity >= visualOptions.minSimilarity)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, visualOptions.maxConnections);
+    
+    // Get user sequence coordinates
+    const userX = xScale(userSequence.X || userSequence.x || 0);
+    const userY = yScale(userSequence.Y || userSequence.y || 0);
+    
+    // Create a group for the connections
+    const connectionsGroup = svg.append('g')
+      .attr('class', 'similarity-connections');
+    
+    // Draw connections
+    filteredSequences.forEach(seq => {
+      // Get sequence coordinates
+      const seqX = xScale(seq.X || seq.x || 0);
+      const seqY = yScale(seq.Y || seq.y || 0);
+      
+      // Calculate line opacity based on similarity
+      const opacity = seq.similarity || 0.5;
+      
+      // Draw the connection line
+      connectionsGroup.append('line')
+        .attr('class', 'similarity-connection')
+        .attr('x1', userX)
+        .attr('y1', userY)
+        .attr('x2', seqX)
+        .attr('y2', seqY)
+        .attr('stroke', visualOptions.lineColor)
+        .attr('stroke-width', visualOptions.lineWidth)
+        .attr('stroke-opacity', opacity)
+        .attr('data-source', userSequence.id)
+        .attr('data-target', seq.id)
+        .attr('data-similarity', seq.similarity);
     });
     
-    console.log(`Added ${similarSequences.length} similarity connections`);
+    console.log(`Drew ${filteredSequences.length} similarity connections`);
+    return connectionsGroup;
   } catch (error) {
-    console.error("Error visualizing similarity connections:", error);
+    console.error('Error visualizing similarity connections:', error);
+    return null;
+  }
+}
+
+/**
+ * Toggles the visibility of similarity connections
+ * @param {Object} scatterComponent - The scatter plot component
+ * @param {boolean} show - Whether to show or hide connections
+ */
+function toggleSimilarityConnections(scatterComponent, show = true) {
+  try {
+    // Get the SVG element - handle different component implementations
+    let svg;
+    if (typeof scatterComponent.getSvg === 'function') {
+      svg = scatterComponent.getSvg();
+    } else if (scatterComponent.svg) {
+      svg = scatterComponent.svg;
+    } else {
+      const containerId = scatterComponent.containerId || scatterComponent.id;
+      if (containerId) {
+        const container = document.getElementById(containerId);
+        if (container) {
+          svg = d3.select(container).select('svg');
+        }
+      }
+    }
+    
+    if (!svg || (svg.empty && svg.empty())) {
+      console.error('Could not find SVG element in scatter component');
+      return;
+    }
+    
+    // Toggle visibility of all similarity connections
+    svg.selectAll('.similarity-connection')
+      .style('visibility', show ? 'visible' : 'hidden')
+      .style('opacity', show ? 0.7 : 0);
+    
+    console.log(`${show ? 'Showed' : 'Hid'} similarity connections`);
+  } catch (error) {
+    console.error('Error toggling similarity connections:', error);
   }
 }
 
 /**
  * Highlight a similar sequence in the visualization
- * @param {Object} scatterComponent - Scatter plot component
  * @param {string} sequenceId - ID of the sequence to highlight
- * @param {boolean} highlight - Whether to highlight or unhighlight
+ * @param {boolean} highlight - Whether to highlight (true) or unhighlight (false)
  */
-function highlightSimilarSequence(scatterComponent, sequenceId, highlight) {
+function highlightSimilarSequence(sequenceId, highlight = true) {
   try {
-    // Get the SVG element from the scatter component
-    const svg = scatterComponent.getSvg();
+    console.log(`${highlight ? 'Highlighting' : 'Unhighlighting'} sequence: ${sequenceId}`);
     
-    // Highlight the point
-    scatterComponent.highlightPoint(sequenceId, highlight);
+    // Highlight in scatter plot
+    const scatterPoints = d3.selectAll('.scatter-point');
+    scatterPoints.filter(d => d && d.id === sequenceId)
+      .transition()
+      .duration(200)
+      .attr('r', highlight ? 8 : 5)
+      .style('fill', highlight ? '#ff0000' : null)
+      .style('stroke', highlight ? '#000000' : null)
+      .style('stroke-width', highlight ? 2 : 1);
     
-    // Highlight connections
-    svg.selectAll('.similarity-connection')
-      .filter(function() {
-        const source = this.getAttribute('data-source');
-        const target = this.getAttribute('data-target');
-        return source === sequenceId || target === sequenceId;
-      })
-      .attr('stroke-width', highlight ? 3 : 1)
-      .attr('stroke-opacity', highlight ? 1 : function() {
-        const similarity = parseFloat(this.getAttribute('data-similarity'));
-        return 0.1 + (similarity * 0.7); // Scale from 0.1 to 0.8
-      });
+    // Highlight in map
+    const mapPoints = d3.selectAll('.map-point');
+    mapPoints.filter(d => d && d.id === sequenceId)
+      .transition()
+      .duration(200)
+      .attr('r', highlight ? 8 : 5)
+      .style('fill', highlight ? '#ff0000' : null)
+      .style('stroke', highlight ? '#000000' : null)
+      .style('stroke-width', highlight ? 2 : 1);
+    
+    // Highlight connection lines - safely check for data structure
+    const connectionLines = d3.selectAll('.similarity-connection');
+    connectionLines.filter(function(d) {
+      // Safely check if this line connects to our target sequence
+      if (!d) return false;
+      
+      // Different possible data structures for connection lines
+      if (d.target && d.target.id === sequenceId) return true;
+      if (d.targetId === sequenceId) return true;
+      if (d.id === sequenceId) return true;
+      
+      // For debugging
+      if (d.target) console.log("Connection line target:", d.target);
+      
+      return false;
+    })
+    .transition()
+    .duration(200)
+    .style('stroke-width', highlight ? 3 : 1)
+    .style('stroke-opacity', highlight ? 0.8 : 0.3);
+    
   } catch (error) {
-    console.error("Error highlighting similar sequence:", error);
-  }
-}
-
-/**
- * Toggle visibility of similarity connections
- * @param {Object} scatterComponent - Scatter plot component
- * @param {boolean} show - Whether to show or hide connections
- */
-function toggleSimilarityConnections(scatterComponent, show) {
-  try {
-    // Get the SVG element from the scatter component
-    const svg = scatterComponent.getSvg();
-    
-    // Show or hide connections
-    svg.selectAll('.similarity-connection')
-      .style('display', show ? 'inline' : 'none');
-  } catch (error) {
-    console.error("Error toggling similarity connections:", error);
+    console.error(`Error ${highlight ? 'highlighting' : 'unhighlighting'} sequence:`, error);
   }
 }
 

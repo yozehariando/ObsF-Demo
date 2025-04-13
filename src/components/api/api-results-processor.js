@@ -7,7 +7,7 @@
 
 import { 
   getUmapProjection, 
-  findSimilarSequencesForJob 
+  getSimilarSequences 
 } from './api-service.js';
 
 /**
@@ -16,13 +16,13 @@ import {
  * @param {Object} jobData - The job data from the API
  * @returns {Promise<Object>} - Processed results including user sequence and similar sequences
  */
-export async function processSequenceResults(jobId, jobData) {
+async function processSequenceResults(jobId, jobData) {
   try {
     console.log("Processing sequence results for job:", jobId);
     
     // Verify job is completed
-    if (jobData.status !== 'completed') {
-      throw new Error(`Cannot process results for incomplete job. Status: ${jobData.status}`);
+    if (jobData && jobData.status !== 'completed') {
+      throw new Error(`Cannot process results for incomplete job. Status: ${jobData?.status || 'unknown'}`);
     }
     
     // Get UMAP projection for the user sequence
@@ -30,22 +30,48 @@ export async function processSequenceResults(jobId, jobData) {
     console.log("UMAP projection received:", umapData);
     
     // Create user sequence object
-    const userSequence = createUserSequenceObject(jobId, umapData, jobData);
+    const userSequence = {
+      id: jobId,
+      x: umapData.x,
+      y: umapData.y,
+      isUserSequence: true,
+      embeddingId: jobData?.embedding_id,
+      uploadedAt: new Date().toISOString(),
+    };
     
     // Find similar sequences
     console.log("Finding similar sequences...");
-    const similarSequences = await findSimilarSequencesForJob(jobId, {
-      limit: 20,
-      threshold: 0.7
-    });
+    const similarSequencesOptions = {
+      n_results: 10,
+      min_distance: -1,
+      max_year: 0,
+      include_unknown_dates: true
+    };
+    
+    const similarSequences = await getSimilarSequences(jobId, similarSequencesOptions);
     
     console.log(`Found ${similarSequences.length} similar sequences`);
+    
+    // Process similar sequences
+    const processedSimilarSequences = similarSequences.map(seq => {
+      return {
+        id: seq.sequence_hash,
+        accession: seq.accession,
+        first_country: seq.first_country,
+        first_date: seq.first_date,
+        x: seq.coordinates[0],
+        y: seq.coordinates[1],
+        similarity: seq.similarity !== undefined ? seq.similarity : 0,
+        isUserSequence: false
+      };
+    });
     
     // Return processed results
     return {
       userSequence,
-      similarSequences,
-      umapData
+      similarSequences: processedSimilarSequences,
+      rawUmapData: umapData,
+      rawSimilarSequences: similarSequences
     };
   } catch (error) {
     console.error("Error processing sequence results:", error);
@@ -54,164 +80,178 @@ export async function processSequenceResults(jobId, jobData) {
 }
 
 /**
- * Create a user sequence object from job and UMAP data
- * @param {string} jobId - The job ID
- * @param {Object} umapData - UMAP projection data
- * @param {Object} jobData - Job data from the API
- * @returns {Object} - User sequence object
- */
-export function createUserSequenceObject(jobId, umapData, jobData) {
-  return {
-    id: jobId,
-    x: umapData.x,
-    y: umapData.y,
-    isUserSequence: true,
-    embeddingId: jobData.embedding_id,
-    uploadedAt: new Date().toISOString(),
-    // Add any other properties needed for visualization
-  };
-}
-
-/**
- * Format similar sequences for display
+ * Generates HTML for the details panel
+ * @param {Object} userSequence - The user's sequence data
  * @param {Array} similarSequences - Array of similar sequences
- * @returns {Array} - Formatted similar sequences
+ * @returns {string} HTML content for the details panel
  */
-export function formatSimilarSequences(similarSequences) {
-  return similarSequences.map((seq, index) => {
-    return {
-      ...seq,
-      rank: index + 1,
-      similarityPercentage: (seq.similarity * 100).toFixed(2) + '%',
-      displayName: seq.accession || seq.id || `Sequence ${index + 1}`,
-      displayLocation: seq.first_country || 'Unknown',
-      displayDate: seq.first_date || 'Unknown',
-    };
-  });
-}
-
-/**
- * Generate HTML for the details panel
- * @param {Object} userSequence - User sequence object
- * @param {Array} similarSequences - Array of similar sequences
- * @returns {string} - HTML for details panel
- */
-export function generateDetailsHTML(userSequence, similarSequences) {
-  const formattedSequences = formatSimilarSequences(similarSequences);
-  
-  return `
-    <h3>Your Sequence</h3>
-    <p>Job ID: ${userSequence.id}</p>
-    <p>UMAP Coordinates: (${userSequence.x.toFixed(4)}, ${userSequence.y.toFixed(4)})</p>
-    <p>Uploaded: ${new Date(userSequence.uploadedAt).toLocaleString()}</p>
+function generateDetailsHTML(userSequence, similarSequences) {
+  try {
+    // Validate inputs
+    if (!userSequence) {
+      return '<p class="text-center text-gray-500">No user sequence data available</p>';
+    }
     
-    <h3>Similar Sequences (${formattedSequences.length})</h3>
-    <div class="similar-sequences-list">
-      ${formattedSequences.map(seq => `
-        <div class="similar-sequence-item" data-id="${seq.id}">
-          <div class="similarity-score">${seq.similarityPercentage}</div>
-          <div class="sequence-details">
-            <p><strong>${seq.displayName}</strong></p>
-            <p>
-              ${seq.displayLocation} 
-              ${seq.displayDate !== 'Unknown' ? `• ${seq.displayDate}` : ''}
-            </p>
+    if (!similarSequences || !Array.isArray(similarSequences) || similarSequences.length === 0) {
+      return `
+        <div class="user-sequence-details">
+          <h3>Your Sequence</h3>
+          <p><strong>ID:</strong> ${userSequence.id || 'N/A'}</p>
+          <p><strong>Coordinates:</strong> (${(userSequence.x || 0).toFixed(2)}, ${(userSequence.y || 0).toFixed(2)})</p>
+        </div>
+        <p class="text-center text-gray-500 mt-4">No similar sequences found</p>
+      `;
+    }
+    
+    // Generate HTML for user sequence
+    const userSequenceHTML = `
+      <div class="user-sequence-details">
+        <h3>Your Sequence</h3>
+        <p><strong>ID:</strong> ${userSequence.id || 'N/A'}</p>
+        <p><strong>Coordinates:</strong> (${(userSequence.x || 0).toFixed(2)}, ${(userSequence.y || 0).toFixed(2)})</p>
+      </div>
+    `;
+    
+    // Generate HTML for similar sequences
+    const similarSequencesHTML = similarSequences.map((seq, index) => {
+      // Safely handle similarity value - default to 0 if undefined
+      const similarity = seq.similarity !== undefined ? seq.similarity : 0;
+      const similarityPercentage = (similarity * 100).toFixed(2);
+      
+      return `
+        <div class="similar-sequence-item" data-id="${seq.id || ''}" data-index="${index}">
+          <div class="similar-sequence-header">
+            <span class="similar-sequence-rank">#${index + 1}</span>
+            <span class="similar-sequence-similarity">${similarityPercentage}% similar</span>
+          </div>
+          <div class="similar-sequence-details">
+            <p><strong>ID:</strong> ${seq.id || 'N/A'}</p>
+            <p><strong>Accession:</strong> ${seq.accession || 'N/A'}</p>
+            <p><strong>First Country:</strong> ${seq.first_country || 'Unknown'}</p>
+            <p><strong>First Date:</strong> ${seq.first_date || 'Unknown'}</p>
+            <p><strong>Coordinates:</strong> (${(seq.x || 0).toFixed(2)}, ${(seq.y || 0).toFixed(2)})</p>
           </div>
         </div>
-      `).join('')}
-    </div>
+      `;
+    }).join('');
     
-    <style>
-      .similar-sequences-list {
-        max-height: 400px;
-        overflow-y: auto;
-        margin-top: 10px;
-      }
-      .similar-sequence-item {
-        display: flex;
-        padding: 8px;
-        border-bottom: 1px solid #eee;
-        cursor: pointer;
-      }
-      .similar-sequence-item:hover {
-        background-color: #f5f5f5;
-      }
-      .similarity-score {
-        font-weight: bold;
-        min-width: 60px;
-        color: #2c7bb6;
-      }
-      .sequence-details {
-        flex: 1;
-      }
-      .sequence-details p {
-        margin: 0 0 5px 0;
-      }
-    </style>
-  `;
+    // Combine HTML
+    return `
+      ${userSequenceHTML}
+      <h3 class="mt-4">Similar Sequences (${similarSequences.length})</h3>
+      <div class="similar-sequences-list">
+        ${similarSequencesHTML}
+      </div>
+      <style>
+        .user-sequence-details {
+          background-color: #f8f9fa;
+          border-left: 4px solid #4CAF50;
+          padding: 15px;
+          margin-bottom: 20px;
+          border-radius: 4px;
+        }
+        
+        .similar-sequences-list {
+          max-height: 400px;
+          overflow-y: auto;
+          border: 1px solid #e0e0e0;
+          border-radius: 4px;
+        }
+        
+        .similar-sequence-item {
+          border-bottom: 1px solid #e0e0e0;
+          padding: 15px;
+          cursor: pointer;
+          transition: background-color 0.2s;
+        }
+        
+        .similar-sequence-item:hover {
+          background-color: #f5f5f5;
+        }
+        
+        .similar-sequence-item:last-child {
+          border-bottom: none;
+        }
+        
+        .similar-sequence-header {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 10px;
+        }
+        
+        .similar-sequence-rank {
+          font-weight: bold;
+          color: #666;
+        }
+        
+        .similar-sequence-similarity {
+          color: #4CAF50;
+          font-weight: bold;
+        }
+        
+        .similar-sequence-details p {
+          margin: 5px 0;
+        }
+      </style>
+    `;
+  } catch (error) {
+    console.error('Error generating details HTML:', error);
+    return `<p class="text-center text-red-500">Error generating details: ${error.message}</p>`;
+  }
 }
 
 /**
- * Prepare data for visualization update
- * @param {Object} userSequence - User sequence object
- * @param {Array} similarSequences - Array of similar sequences
- * @returns {Object} - Data prepared for visualization
+ * Prepares data for visualization
+ * @param {Object} userSequence - User sequence data
+ * @param {Array} similarSequences - Similar sequences data
+ * @returns {Array} Combined data for visualization
  */
-export function prepareVisualizationData(userSequence, similarSequences) {
-  // Combine user sequence and similar sequences for visualization
-  const allData = [userSequence, ...similarSequences];
+function prepareVisualizationData(userSequence, similarSequences) {
+  // Combine user sequence and similar sequences
+  const visualizationData = [
+    { ...userSequence, isUserSequence: true },
+    ...similarSequences.map(seq => ({ ...seq, isUserSequence: false }))
+  ];
   
-  // Create a color scale based on similarity
-  const colorScale = (d) => {
-    if (d.isUserSequence) return '#ff0000'; // Red for user sequence
-    
-    // Color similar sequences based on similarity
-    const similarity = d.similarity || 0;
-    if (similarity > 0.9) return '#1a9850'; // Very similar - green
-    if (similarity > 0.8) return '#91cf60'; // Similar - light green
-    if (similarity > 0.7) return '#d9ef8b'; // Somewhat similar - yellow-green
-    if (similarity > 0.6) return '#fee08b'; // Less similar - yellow
-    return '#d73027'; // Not very similar - red
-  };
-  
-  // Create a size scale based on similarity
-  const sizeScale = (d) => {
-    if (d.isUserSequence) return 8; // Larger for user sequence
-    
-    // Size similar sequences based on similarity
-    const similarity = d.similarity || 0;
-    return 3 + (similarity * 5); // 3 to 8 based on similarity
-  };
-  
-  return {
-    data: allData,
-    colorScale,
-    sizeScale
-  };
+  return visualizationData;
 }
 
 /**
- * Add event listeners to similar sequence items
- * @param {Function} highlightFunction - Function to call when highlighting a sequence
+ * Adds event listeners to similar sequence items
+ * @param {Function} highlightCallback - Callback function for highlighting
  */
-export function addSimilarSequenceListeners(highlightFunction) {
-  // Add event listeners to similar sequence items
-  document.querySelectorAll('.similar-sequence-item').forEach(item => {
+function addSimilarSequenceListeners(highlightCallback) {
+  const sequenceItems = document.querySelectorAll('.similar-sequence-item');
+  
+  sequenceItems.forEach(item => {
     const sequenceId = item.getAttribute('data-id');
     
-    item.addEventListener('mouseenter', () => {
-      highlightFunction(sequenceId, true);
-      item.style.backgroundColor = '#e6f3ff';
-    });
+    // Remove existing listeners
+    item.removeEventListener('mouseenter', item._mouseenterListener);
+    item.removeEventListener('mouseleave', item._mouseleaveListener);
     
-    item.addEventListener('mouseleave', () => {
-      highlightFunction(sequenceId, false);
-      item.style.backgroundColor = '';
-    });
+    // Add mouseenter listener
+    item._mouseenterListener = () => {
+      if (highlightCallback) {
+        highlightCallback(sequenceId, true);
+      }
+    };
+    item.addEventListener('mouseenter', item._mouseenterListener);
     
-    item.addEventListener('click', () => {
-      // Could add additional functionality on click
-      console.log('Sequence clicked:', sequenceId);
-    });
+    // Add mouseleave listener
+    item._mouseleaveListener = () => {
+      if (highlightCallback) {
+        highlightCallback(sequenceId, false);
+      }
+    };
+    item.addEventListener('mouseleave', item._mouseleaveListener);
   });
 }
+
+// Export functions
+export {
+  processSequenceResults,
+  generateDetailsHTML,
+  prepareVisualizationData,
+  addSimilarSequenceListeners
+};

@@ -3,7 +3,7 @@ theme: dashboard
 toc: false
 ---
 
-# Modular DNA Mutation Dashboard - API
+# Modular DNA Mutation Dashboard - API - 2
 
 This dashboard demonstrates a modular approach to visualizing DNA mutation data.
 
@@ -543,7 +543,23 @@ function updateJobStatus(jobId, status) {
           });
           
           // Update the details panel with user sequence info
-          updateDetailsPanel(generateDetailsHTML(userSequence, similarSequences));
+          updateDetailsPanel(`
+            <h3>Your Sequence</h3>
+            <p>Job ID: ${jobId}</p>
+            <p>UMAP Coordinates: (${umapData.x.toFixed(4)}, ${umapData.y.toFixed(4)})</p>
+            <h3>Similar Sequences</h3>
+            <div class="similar-sequences-list">
+              ${similarSequences.map(seq => `
+                <div class="similar-sequence-item">
+                  <p><strong>ID:</strong> ${seq.id}</p>
+                  <p><strong>Similarity:</strong> ${(seq.similarity * 100).toFixed(2)}%</p>
+                  ${seq.accession ? `<p><strong>Accession:</strong> ${seq.accession}</p>` : ''}
+                  ${seq.first_country ? `<p><strong>Country:</strong> ${seq.first_country}</p>` : ''}
+                  ${seq.first_date ? `<p><strong>Date:</strong> ${seq.first_date}</p>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          `);
           
           // Show success message
           showInfoMessage("Sequence analysis complete! Similar sequences found.");
@@ -721,7 +737,7 @@ function setupJobPolling(jobId, maxAttempts = 60) { // 5 minutes max (60 * 5 sec
         console.log(`Job ${jobId} completed successfully`);
         
         try {
-          // Process the results using the imported function
+          // Process the results
           const results = await processSequenceResults(jobId, jobData);
           
           // Update visualization and UI
@@ -1041,7 +1057,7 @@ function updateVisualizationWithResults(results) {
       console.log("Highlighted similar sequences on map");
     }
     
-    // 4. Update the details panel - use the imported function
+    // 4. Update the details panel
     const detailsPanel = document.getElementById('details-panel');
     if (detailsPanel) {
       detailsPanel.innerHTML = generateDetailsHTML(userSequence, similarSequences);

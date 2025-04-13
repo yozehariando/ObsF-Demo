@@ -68,11 +68,12 @@ The complete workflow uses these endpoints in sequence:
   - ✅ Generate details panel HTML
   - ✅ Prepare visualization updates
 
-### Step 4: Visualization Integration 🔜
-- Add user sequence marker with distinct styling
-- Highlight similar sequences with visual connections
-- Update both map and scatter plot components
-- Add toggle for showing/hiding similarity connections
+### Step 4: Visualization Integration ⏳
+- ⏳ Add user sequence marker with distinct styling
+- ⏳ Highlight similar sequences with visual connections
+- ⏳ Update both map and scatter plot components
+- ⏳ Add toggle for showing/hiding similarity connections
+- 🔴 Fix job polling mechanism to properly handle job completion
 
 ### Step 5: UI Enhancements 🔜
 - Create similarity panel showing top matches

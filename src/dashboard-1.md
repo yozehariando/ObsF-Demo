@@ -3,7 +3,7 @@ theme: dashboard
 toc: false
 ---
 
-# Modular DNA Mutation Dashboard - API
+# Modular DNA Mutation Dashboard - API - 1
 
 This dashboard demonstrates a modular approach to visualizing DNA mutation data.
 
