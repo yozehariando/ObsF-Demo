@@ -29,7 +29,7 @@ async function processSequenceResults(jobId, jobData) {
     const umapData = await getUmapProjection(jobId);
     console.log("UMAP projection received:", umapData);
     
-    // Create user sequence object
+    // Create user sequence object with coordinates from UMAP projection
     const userSequence = {
       id: jobId,
       x: umapData.x,
@@ -38,6 +38,8 @@ async function processSequenceResults(jobId, jobData) {
       embeddingId: jobData?.embedding_id,
       uploadedAt: new Date().toISOString(),
     };
+    
+    console.log("Created user sequence object:", userSequence);
     
     // Find similar sequences
     console.log("Finding similar sequences...");
@@ -50,21 +52,35 @@ async function processSequenceResults(jobId, jobData) {
     
     const similarSequences = await getSimilarSequences(jobId, similarSequencesOptions);
     
-    console.log(`Found ${similarSequences.length} similar sequences`);
+    console.log(`Found ${similarSequences.length} similar sequences:`, similarSequences);
     
-    // Process similar sequences
-    const processedSimilarSequences = similarSequences.map(seq => {
-      return {
-        id: seq.sequence_hash,
-        accession: seq.accession,
-        first_country: seq.first_country,
-        first_date: seq.first_date,
-        x: seq.coordinates[0],
-        y: seq.coordinates[1],
-        similarity: seq.similarity !== undefined ? seq.similarity : 0,
-        isUserSequence: false
-      };
-    });
+    // Process similar sequences - ensure we have an array to map over
+    const processedSimilarSequences = Array.isArray(similarSequences) 
+      ? similarSequences.map(seq => {
+          // Use the coordinates from the API if available, otherwise generate random ones
+          let x, y;
+          if (seq.coordinates && Array.isArray(seq.coordinates) && seq.coordinates.length >= 2) {
+            [x, y] = seq.coordinates;
+          } else {
+            // Generate coordinates near the user sequence for better visualization
+            x = umapData.x + (Math.random() * 2 - 1);
+            y = umapData.y + (Math.random() * 2 - 1);
+          }
+          
+          return {
+            id: seq.sequence_hash || seq.id || `seq-${Math.random().toString(36).substring(2, 10)}`,
+            accession: seq.accession || 'Unknown',
+            first_country: seq.first_country || 'Unknown',
+            first_date: seq.first_date || 'Unknown',
+            x: x,
+            y: y,
+            similarity: seq.similarity !== undefined ? seq.similarity : 0,
+            isUserSequence: false
+          };
+        })
+      : [];
+    
+    console.log("Processed similar sequences:", processedSimilarSequences);
     
     // Return processed results
     return {

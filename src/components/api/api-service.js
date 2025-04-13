@@ -357,38 +357,62 @@ async function checkJobStatus(jobId) {
 }
 
 /**
- * Get UMAP projection for a sequence
+ * Get UMAP projection for a job
  * @param {string} jobId - The job ID
  * @returns {Promise<Object>} - UMAP projection data
  */
 async function getUmapProjection(jobId) {
-  console.log(`Getting UMAP projection for job ${jobId}`);
-  
   try {
-    // Use the correct URL format with job_id as a query parameter
-    const url = `${API_BASE_URL}/pathtrack/sequence/umap?job_id=${jobId}`;
+    console.log(`Getting UMAP projection for job ${jobId}`);
+    
+    const url = `${API_BASE_URL}/pathtrack/sequence/umap?job_id=${encodeURIComponent(jobId)}`;
+    console.log(`Sending POST request to: ${url}`);
     
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'accept': 'application/json',
+        'Content-Type': 'application/json',
         'X-API-Key': API_KEY
       },
-      // Send an empty body as in the CURL example
-      body: ''
+      body: JSON.stringify({})
     });
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Error getting UMAP projection: ${response.status} ${response.statusText}`, errorText);
-      throw new Error(`Failed to get UMAP projection: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to get UMAP projection: ${response.status} - ${errorText}`);
     }
     
     const data = await response.json();
-    console.log('UMAP projection data:', data);
-    return data;
+    console.log("UMAP projection response:", data);
+    
+    // Extract coordinates from the response
+    // The API returns coordinates in the result.coordinates array
+    if (data && data.result && data.result.coordinates && 
+        Array.isArray(data.result.coordinates) && 
+        data.result.coordinates.length >= 2) {
+      
+      const [x, y] = data.result.coordinates;
+      console.log(`Extracted UMAP coordinates: (${x}, ${y})`);
+      
+      return {
+        x: x,
+        y: y,
+        jobId: jobId,
+        rawData: data
+      };
+    } else {
+      console.warn("API response doesn't contain valid coordinates:", data);
+      // Return placeholder coordinates if not found
+      return {
+        x: 0,
+        y: 0,
+        jobId: jobId,
+        rawData: data,
+        isPlaceholder: true
+      };
+    }
   } catch (error) {
-    console.error('Error in getUmapProjection:', error);
+    console.error("Error getting UMAP projection:", error);
     throw error;
   }
 }

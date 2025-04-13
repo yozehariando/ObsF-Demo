@@ -682,62 +682,130 @@ function updateJobStatus(jobId, status) {
   }
 })();
 
-// Fix the job polling mechanism
-
-// Add a timeout mechanism to prevent endless polling
-function setupJobPolling(jobId, maxAttempts = 60) { // 5 minutes max (60 * 5 seconds)
-  let attempts = 0;
+/**
+ * Setup job polling to check status periodically
+ * @param {string} jobId - The job ID to poll
+ * @param {number} maxAttempts - Maximum number of polling attempts
+ */
+function setupJobPolling(jobId, maxAttempts = 60) {
+  console.log(`Setting up polling for job ${jobId}`);
   
-  console.log(`Setting up job polling for job ${jobId}`);
-  
-  // Clear any existing interval for this job
-  if (state.jobPollingIntervals[jobId]) {
-    clearInterval(state.jobPollingIntervals[jobId]);
+  // Initialize job tracking in state
+  if (!state.jobPollingIntervals) {
+    state.jobPollingIntervals = {};
   }
   
-  // Set up new polling interval
-  state.jobPollingIntervals[jobId] = setInterval(async () => {
-    attempts++;
-    
-    console.log(`Polling job ${jobId}, attempt ${attempts}/${maxAttempts}`);
-    
+  // Track attempts
+  let attempts = 0;
+  
+  // Update progress indicator - with debugging
+  const progressIndicator = document.getElementById('job-progress');
+  console.log("Progress indicator element:", progressIndicator);
+  
+  // If progress indicator doesn't exist, create it
+  if (!progressIndicator) {
+    console.log("Creating progress indicator element");
+    const jobTrackerElement = document.querySelector('.job-tracker') || document.body;
+    const newProgressIndicator = document.createElement('div');
+    newProgressIndicator.id = 'job-progress';
+    newProgressIndicator.className = 'progress-container';
+    newProgressIndicator.innerHTML = `
+      <div class="progress-label">Processing DNA Sequence</div>
+      <div class="progress-bar-container">
+        <div class="progress-bar" style="width: 5%"></div>
+      </div>
+    `;
+    jobTrackerElement.appendChild(newProgressIndicator);
+    console.log("Created new progress indicator:", newProgressIndicator);
+  }
+  
+  // Get the progress indicator again (in case we just created it)
+  const updatedProgressIndicator = document.getElementById('job-progress');
+  if (updatedProgressIndicator) {
+    updatedProgressIndicator.style.display = 'block';
+    updatedProgressIndicator.innerHTML = `
+      <div class="progress-label">Processing DNA Sequence</div>
+      <div class="progress-bar-container">
+        <div class="progress-bar" style="width: 5%"></div>
+      </div>
+    `;
+    console.log("Updated progress indicator:", updatedProgressIndicator);
+  } else {
+    console.error("Failed to find or create progress indicator");
+  }
+  
+  // Add CSS for progress bar if not already present
+  if (!document.getElementById('progress-bar-styles')) {
+    const styleElement = document.createElement('style');
+    styleElement.id = 'progress-bar-styles';
+    styleElement.textContent = `
+      .progress-container {
+        margin: 15px 0;
+        width: 100%;
+      }
+      .progress-label {
+        font-size: 14px;
+        margin-bottom: 5px;
+        color: #333;
+      }
+      .progress-bar-container {
+        height: 10px;
+        background-color: #f0f0f0;
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      .progress-bar {
+        height: 100%;
+        background-color: #4CAF50;
+        width: 0%;
+        transition: width 0.5s ease;
+      }
+    `;
+    document.head.appendChild(styleElement);
+    console.log("Added progress bar styles");
+  }
+  
+  // Set up interval for polling
+  const intervalId = setInterval(async () => {
     try {
-      // Use the imported checkJobStatus function
-      const jobData = await checkJobStatus(jobId);
+      attempts++;
+      console.log(`Polling job ${jobId}, attempt ${attempts}/${maxAttempts}`);
       
-      if (!jobData) {
-        console.error(`No job data returned for job ${jobId}`);
-        showErrorMessage(`Failed to get status for job ${jobId}`);
-        clearInterval(state.jobPollingIntervals[jobId]);
-        delete state.jobPollingIntervals[jobId];
-        return;
+      // Update progress percentage
+      const updatedProgressBar = document.getElementById('job-progress');
+      if (updatedProgressBar) {
+        const percentage = Math.min(5 + (attempts * 95 / maxAttempts), 95);
+        console.log(`Updating progress bar to ${percentage}%`);
+        updatedProgressBar.querySelector('.progress-bar').style.width = `${percentage}%`;
+      } else {
+        console.error("Cannot find progress bar element for update");
       }
       
-      // Update job status in UI
-      updateJobStatus(jobId, jobData.status);
+      // Check job status
+      const jobData = await checkJobStatus(jobId);
       
-      // If job is completed or failed, stop polling
       if (jobData.status === 'completed') {
         console.log(`Job ${jobId} completed successfully`);
         
+        // Update progress to 100%
+        const completedProgressBar = document.getElementById('job-progress');
+        if (completedProgressBar) {
+          console.log("Setting progress to 100%");
+          completedProgressBar.querySelector('.progress-bar').style.width = "100%";
+          // Hide progress after a delay
+          setTimeout(() => {
+            completedProgressBar.style.display = 'none';
+          }, 1000);
+        } else {
+          console.error("Cannot find progress bar element for completion");
+        }
+        
         try {
-          // Process the results using the imported function
+          // Process the results
           const results = await processSequenceResults(jobId, jobData);
           
           // Update visualization and UI
-          updateVisualizationWithResults(results);
-          
-          // Update details panel
-          const detailsPanel = document.getElementById('details-panel');
-          detailsPanel.innerHTML = generateDetailsHTML(results.userSequence, results.similarSequences);
-          
-          // Add event listeners
-          addSimilarSequenceListeners((sequenceId, highlight) => {
-            highlightSequence(sequenceId, highlight);
-          });
-          
-          // Add toggle for similarity connections
-          addSimilarityConnectionsToggle();
+          await updateVisualizationWithResults(results);
           
           // Show success message
           showInfoMessage("Sequence analysis complete!");
@@ -753,6 +821,12 @@ function setupJobPolling(jobId, maxAttempts = 60) { // 5 minutes max (60 * 5 sec
         console.error(`Job ${jobId} failed: ${jobData.error || 'Unknown error'}`);
         showErrorMessage(`Job ${jobId} failed: ${jobData.error || 'Unknown error'}`);
         
+        // Hide progress
+        const failedProgressBar = document.getElementById('job-progress');
+        if (failedProgressBar) {
+          failedProgressBar.style.display = 'none';
+        }
+        
         // Stop polling
         clearInterval(state.jobPollingIntervals[jobId]);
         delete state.jobPollingIntervals[jobId];
@@ -760,30 +834,23 @@ function setupJobPolling(jobId, maxAttempts = 60) { // 5 minutes max (60 * 5 sec
         console.warn(`Reached maximum polling attempts (${maxAttempts}) for job ${jobId}`);
         showErrorMessage(`Job ${jobId} is taking too long. Please check back later.`);
         
+        // Hide progress
+        const timeoutProgressBar = document.getElementById('job-progress');
+        if (timeoutProgressBar) {
+          timeoutProgressBar.style.display = 'none';
+        }
+        
         // Stop polling
         clearInterval(state.jobPollingIntervals[jobId]);
         delete state.jobPollingIntervals[jobId];
       }
     } catch (error) {
       console.error(`Error polling job ${jobId}:`, error);
-      
-      // Increment error count, but don't stop polling unless max attempts reached
-      if (attempts >= maxAttempts) {
-        showErrorMessage(`Stopped polling job ${jobId} after ${attempts} attempts`);
-        clearInterval(state.jobPollingIntervals[jobId]);
-        delete state.jobPollingIntervals[jobId];
-      }
     }
   }, 5000); // Poll every 5 seconds
   
-  // Return a function to manually stop polling
-  return () => {
-    if (state.jobPollingIntervals[jobId]) {
-      clearInterval(state.jobPollingIntervals[jobId]);
-      delete state.jobPollingIntervals[jobId];
-      console.log(`Manually stopped polling for job ${jobId}`);
-    }
-  };
+  // Store interval ID for cleanup
+  state.jobPollingIntervals[jobId] = intervalId;
 }
 
 // Add the missing addSimilarityConnectionsToggle function
