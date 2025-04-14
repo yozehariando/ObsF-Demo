@@ -10,7 +10,7 @@ This dashboard demonstrates a modular approach to visualizing DNA mutation data.
 <div class="grid grid-cols-1 gap-4">
   <div class="card p-4">
     <h2 class="mb-4">Geographic Distribution</h2>
-    <div id="map-container" style="width: 100%; height: 450px; position: relative; overflow: hidden;"></div>
+    <div id="map-container" style="width: 100%; height: 550px; position: relative; overflow: hidden;"></div>
   </div>
 </div>
 
