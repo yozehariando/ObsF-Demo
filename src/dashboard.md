@@ -47,6 +47,7 @@ import { createApiMap } from "./components/api-map-component.js";
 import { createUmapScatterPlot } from "./components/api-scatter-component.js";
 import { updateDetailsPanel, addContainerStyles } from "./components/ui-utils.js";
 import { setupEventHandlers } from "./components/event-handlers.js";
+import { createUserScatterPlot } from "./components/api-user-scatter-component.js";
 import { 
   fetchUmapData, 
   transformUmapData,
@@ -56,20 +57,23 @@ import {
   getSimilarSequences,
   visualizeSimilarityConnections,
   highlightSimilarSequence,
-  toggleSimilarityConnections
+  toggleSimilarityConnections,
+  API_BASE_URL,
+  API_KEY
 } from './components/api/api-service.js';
 import { createUploadModal, readFastaFile, parseFastaContent } from './components/api/api-upload-component.js';
 import { createJobTracker } from './components/api/api-job-tracker.js';
-import { 
-  fetchAllSequences, 
-  findSimilarSequencesForJob
-} from './components/api/api-similarity-service.js';
 import { 
   processSequenceResults, 
   generateDetailsHTML, 
   prepareVisualizationData,
   addSimilarSequenceListeners
 } from './components/api/api-results-processor.js';
+import {
+  findSimilarSequencesForJob,
+  fetchAllSequences,
+  findSimilarSequences
+} from './components/api/api-similarity-service.js';
 
 // Make FileAttachment available globally if it exists in this context
 // This helps our components detect if they're running in Observable
@@ -93,8 +97,243 @@ const state = {
 };
 
 // Define API constants
-const API_BASE_URL = 'http://54.169.186.71/api/v1';
-const API_KEY = 'test_key';
+// const API_BASE_URL = 'http://54.169.186.71/api/v1';
+// const API_KEY = 'test_key';
+
+/**
+ * Handle job completion and update visualizations
+ * @param {string} jobId - The completed job ID
+ * @param {Object} jobData - The job data from the API
+ */
+async function handleJobCompletion(jobId, jobData) {
+  try {
+    console.log(`Job ${jobId} completed. Processing results...`);
+    console.log("Job data received:", jobData);
+    showLoadingIndicator("Processing sequence results...");
+    
+    // Extract embedding ID from job data
+    let embeddingId = jobId;
+    if (jobData && jobData.embedding_id) {
+      embeddingId = jobData.embedding_id;
+    } else if (jobData && jobData.result && jobData.result.embedding_id) {
+      embeddingId = jobData.result.embedding_id;
+    }
+    
+    console.log(`Using embedding ID: ${embeddingId}`);
+    
+    // Get UMAP projection for the user sequence
+    const umapProjection = await getUmapProjection(embeddingId);
+    console.log("UMAP projection:", umapProjection);
+    
+    // Create a user sequence object
+    const userSequence = {
+      id: embeddingId,
+      isUserSequence: true,
+      accession: "User Sequence",
+      country: "N/A",
+      date: new Date().toISOString().split('T')[0]
+    };
+    
+    // Extract coordinates from the API response
+    if (umapProjection && umapProjection.result && umapProjection.result.coordinates) {
+      // Format from API response
+      userSequence.x = umapProjection.result.coordinates[0];
+      userSequence.y = umapProjection.result.coordinates[1];
+    } else if (umapProjection && umapProjection.x !== undefined && umapProjection.y !== undefined) {
+      // Direct coordinates
+      userSequence.x = umapProjection.x;
+      userSequence.y = umapProjection.y;
+    } else {
+      // Fallback to random coordinates if none found
+      console.warn("No coordinates found in UMAP projection, using random values");
+      userSequence.x = (Math.random() * 20) - 10;
+      userSequence.y = (Math.random() * 20) - 10;
+    }
+    
+    console.log("User sequence with coordinates:", userSequence);
+    
+    // Find similar sequences using our improved function
+    let similarSequences = [];
+    try {
+      console.log("Finding similar sequences for job:", embeddingId);
+      
+      // Import the function directly to avoid module loading issues
+      // const { findSimilarSequencesForJob } = await import('./components/api/api-similarity-service.js');
+      
+      similarSequences = await findSimilarSequencesForJob(embeddingId, {
+        limit: 10,
+        threshold: 0.7
+      });
+      console.log("Similar sequences found:", similarSequences.length);
+      
+      // Store in state
+      state.similarSequences = similarSequences;
+    } catch (error) {
+      console.error("Error finding similar sequences:", error);
+      showWarningMessage(`Could not find similar sequences: ${error.message}`);
+    }
+    
+    // Create or update user scatter plot
+    const userScatterContainer = document.getElementById('user-scatter-container');
+    
+    try {
+      // Clear the container
+      userScatterContainer.innerHTML = '';
+      
+      // Create visualization data
+      const visualizationData = [userSequence, ...similarSequences];
+      
+      // Create the user scatter plot using the dedicated component
+      state.userScatterComponent = createUserScatterPlot('user-scatter-container', visualizationData, {
+        width: userScatterContainer.clientWidth,
+        height: userScatterContainer.clientHeight,
+        showLabels: true,
+        userPointRadius: 8,
+        pointRadius: 5,
+        onPointClick: (point) => {
+          console.log("User scatter point clicked:", point);
+          // Highlight the point in all visualizations
+          highlightSequence(point.id, true);
+        }
+      });
+      
+      // Add similarity connections if we have similar sequences
+      if (similarSequences.length > 0) {
+        state.userScatterComponent.addSimilarityConnections(userSequence, similarSequences);
+      }
+      
+      // Update details panel
+      const detailsPanel = document.getElementById('details-panel');
+      if (detailsPanel) {
+        detailsPanel.innerHTML = generateDetailsHTML(userSequence, similarSequences);
+        
+        // Add event listeners to similar sequence items
+        addSimilarSequenceListeners();
+      }
+      
+      // Show success message
+      showInfoMessage(`Analysis complete! Found ${similarSequences.length} similar sequences.`);
+    } catch (error) {
+      console.error("Error creating user scatter plot:", error);
+      userScatterContainer.innerHTML = `
+        <div class="flex flex-col items-center justify-center h-full">
+          <p class="text-center text-red-500 mb-4">Error visualizing sequence: ${error.message}</p>
+          <button id="retry-visualization-button" class="btn btn-primary">Retry Visualization</button>
+        </div>
+      `;
+      
+      // Add retry button handler
+      document.getElementById('retry-visualization-button').addEventListener('click', () => {
+        handleJobCompletion(jobId, jobData);
+      });
+    }
+    
+    hideLoadingIndicator();
+  } catch (error) {
+    console.error("Error handling job completion:", error);
+    hideLoadingIndicator();
+    showErrorMessage(`Error processing sequence results: ${error.message}`);
+    
+    // Show error in user scatter container
+    const userScatterContainer = document.getElementById('user-scatter-container');
+    userScatterContainer.innerHTML = `
+      <div class="flex flex-col items-center justify-center h-full">
+        <p class="text-center text-red-500 mb-4">Error: ${error.message}</p>
+        <button id="upload-fasta-button" class="btn btn-primary">Try Again</button>
+      </div>
+    `;
+  }
+}
+
+// Function to set up job polling
+function setupJobPolling(jobId, maxAttempts = 60) {
+  let attempts = 0;
+  
+  console.log(`Setting up polling for job ${jobId}`);
+  
+  // Create a function to stop polling
+  const stopPolling = () => {
+    if (state.jobPollingIntervals[jobId]) {
+      console.log(`Stopping polling for job ${jobId}`);
+      clearInterval(state.jobPollingIntervals[jobId]);
+      delete state.jobPollingIntervals[jobId];
+    }
+  };
+  
+  // Set up the interval
+  const intervalId = setInterval(async () => {
+    attempts++;
+    
+    try {
+      console.log(`Polling job ${jobId}, attempt ${attempts}/${maxAttempts}`);
+      
+      // Update progress bar if it exists
+      const progressBar = document.getElementById('job-progress-bar');
+      if (progressBar) {
+        const progress = Math.min((attempts / maxAttempts) * 100, 95);
+        progressBar.style.width = `${progress}%`;
+      }
+      
+      // Check job status
+      const jobData = await checkJobStatus(jobId);
+      
+      // Update job tracker if it exists
+      if (state.jobTracker) {
+        state.jobTracker.updateStatus(jobData.status, jobData);
+      }
+      
+      // Handle different job statuses
+      if (jobData.status === 'completed') {
+        console.log(`Job ${jobId} completed successfully`);
+        
+        // Stop polling
+        stopPolling();
+        
+        // Process the results
+        await handleJobCompletion(jobId, jobData);
+        
+        // Update job tracker
+        if (state.jobTracker) {
+          state.jobTracker.complete(jobData);
+        }
+      } else if (jobData.status === 'failed') {
+        console.error(`Job ${jobId} failed:`, jobData.error || 'Unknown error');
+        
+        // Stop polling
+        stopPolling();
+        
+        // Show error message
+        showErrorMessage(`Job failed: ${jobData.error || 'Unknown error'}`);
+        
+        // Update job tracker
+        if (state.jobTracker) {
+          state.jobTracker.error(jobData.error || 'Unknown error');
+        }
+      } else if (attempts >= maxAttempts) {
+        console.warn(`Job ${jobId} polling timed out after ${maxAttempts} attempts`);
+        
+        // Stop polling
+        stopPolling();
+        
+        // Show timeout message
+        showWarningMessage(`Job ${jobId} is taking too long. Please check back later.`);
+        
+        // Update job tracker
+        if (state.jobTracker) {
+          state.jobTracker.timeout();
+        }
+      }
+    } catch (error) {
+      console.error(`Error polling job ${jobId}:`, error);
+    }
+  }, 5000); // Poll every 5 seconds
+  
+  // Store interval ID for cleanup
+  state.jobPollingIntervals[jobId] = intervalId;
+  
+  // Return the stop function
+  return stopPolling;
+}
 
 // Add utility functions for showing messages and loading indicators
 function showLoadingIndicator(message = "Loading...") {
@@ -125,6 +364,10 @@ function hideLoadingIndicator() {
 
 function showInfoMessage(message, duration = 5000) {
   showMessage(message, 'info', duration);
+}
+
+function showWarningMessage(message, duration = 8000) {
+  showMessage(message, 'warning', duration);
 }
 
 function showErrorMessage(message, duration = 8000) {
@@ -478,199 +721,6 @@ function updateJobStatus(jobId, status) {
         // Continue anyway, as this is not critical for initial visualization
       }
       
-      // Function to process sequence results
-      async function processSequenceResults(jobId, projection, similarSequences) {
-        try {
-          console.log("Processing sequence results for job:", jobId);
-          
-          // Get UMAP projection for the user sequence
-          const umapResponse = await getUmapProjection(jobId);
-          
-          if (!umapResponse.ok) {
-            throw new Error(`Failed to get UMAP projection: ${umapResponse.status}`);
-          }
-          
-          const umapData = await umapResponse.json();
-          console.log("UMAP projection received:", umapData);
-          
-          // Create user sequence object
-          const userSequence = {
-            id: jobId,
-            x: umapData.x,
-            y: umapData.y,
-            isUserSequence: true,
-            // Add other properties as needed
-          };
-          
-          // Find similar sequences
-          console.log("Finding similar sequences...");
-          const similarSequences = await findSimilarSequencesForJob(jobId, {
-            limit: 20,
-            threshold: 0.7
-          });
-          
-          console.log("Found similar sequences:", similarSequences.length);
-          
-          // Create user scatter plot if it doesn't exist
-          if (!state.userScatterComponent) {
-            const userScatterContainer = document.getElementById('user-scatter-container');
-            // Clear the container
-            userScatterContainer.innerHTML = '';
-            
-            // Create the scatter plot
-            state.userScatterComponent = createUmapScatterPlot(userScatterContainer, [userSequence], {
-              width: userScatterContainer.clientWidth,
-              height: userScatterContainer.clientHeight,
-              xField: 'x',
-              yField: 'y',
-              colorField: 'isUserSequence',
-              colorScale: d3.scaleOrdinal().domain([true, false]).range(['red', 'blue']),
-              tooltipFunction: (d) => {
-                return d.isUserSequence ? 
-                  'Your sequence' : 
-                  `Similarity: ${(d.similarity * 100).toFixed(2)}%<br>ID: ${d.id}`;
-              }
-            });
-          }
-          
-          // Add user sequence and similar sequences to the user scatter plot
-          state.userScatterComponent.updateData([userSequence, ...similarSequences]);
-          
-          // Visualize similarity connections
-          visualizeSimilarityConnections(state.userScatterComponent, userSequence, similarSequences, {
-            lineColor: 'rgba(255, 0, 0, 0.3)',
-            lineWidth: 1
-          });
-          
-          // Update the details panel with user sequence info
-          updateDetailsPanel(generateDetailsHTML(userSequence, similarSequences));
-          
-          // Show success message
-          showInfoMessage("Sequence analysis complete! Similar sequences found.");
-        } catch (error) {
-          console.error("Error processing sequence results:", error);
-          showErrorMessage("Failed to process sequence results: " + error.message);
-        }
-      }
-      
-      // Function to show similarity panel
-      function showSimilarityPanel(userSequence, similarSequences) {
-        try {
-          console.log("Showing similarity panel for:", userSequence, similarSequences);
-          
-          // Get the details panel
-          const detailsPanel = document.getElementById('details-panel');
-          
-          // Clear existing content
-          detailsPanel.innerHTML = '';
-          
-          // Create header
-          const header = document.createElement('h3');
-          header.className = 'text-lg font-semibold mb-4';
-          header.textContent = 'Similarity Results';
-          detailsPanel.appendChild(header);
-          
-          // Create user sequence info
-          const userInfo = document.createElement('div');
-          userInfo.className = 'mb-4 p-3 bg-blue-50 rounded';
-          userInfo.innerHTML = `
-            <p class="font-semibold">Your Sequence</p>
-            <p>ID: ${userSequence.id}</p>
-            <p>UMAP Coordinates: (${userSequence.x.toFixed(2)}, ${userSequence.y.toFixed(2)})</p>
-          `;
-          detailsPanel.appendChild(userInfo);
-          
-          // Create similar sequences list
-          const similarHeader = document.createElement('h4');
-          similarHeader.className = 'font-semibold mt-4 mb-2';
-          similarHeader.textContent = `Similar Sequences (${similarSequences.length})`;
-          detailsPanel.appendChild(similarHeader);
-          
-          if (similarSequences.length === 0) {
-            const noResults = document.createElement('p');
-            noResults.className = 'text-gray-500 italic';
-            noResults.textContent = 'No similar sequences found.';
-            detailsPanel.appendChild(noResults);
-            return;
-          }
-          
-          // Create list
-          const list = document.createElement('div');
-          list.className = 'space-y-2 max-h-60 overflow-y-auto';
-          
-          // Add each similar sequence
-          similarSequences.forEach((seq, index) => {
-            const item = document.createElement('div');
-            item.className = 'p-2 border-b cursor-pointer hover:bg-gray-100';
-            item.setAttribute('data-id', seq.id);
-            
-            // Calculate similarity percentage
-            const similarityPercent = (seq.similarity * 100).toFixed(1);
-            
-            // Get color based on score
-            const scoreColor = getScoreColor(seq.similarity);
-            
-            item.innerHTML = `
-              <div class="flex justify-between">
-                <span class="font-medium">#${index + 1}</span>
-                <span class="font-medium" style="color: ${scoreColor}">${similarityPercent}% similar</span>
-              </div>
-              <div class="text-sm">
-                <p>ID: ${seq.id}</p>
-                ${seq.accession ? `<p>Accession: ${seq.accession}</p>` : ''}
-                ${seq.first_country ? `<p>Country: ${seq.first_country}</p>` : ''}
-                ${seq.first_date ? `<p>Date: ${seq.first_date}</p>` : ''}
-              </div>
-            `;
-            
-            list.appendChild(item);
-            
-            // Add click event to highlight this sequence
-            item.addEventListener('click', () => {
-              const id = item.getAttribute('data-id');
-              if (id) {
-                // Highlight in map
-                if (state.mapComponent && state.mapComponent.highlightPoint) {
-                  state.mapComponent.highlightPoint(id);
-                }
-                
-                // Highlight in scatter plot
-                if (state.scatterComponent && state.scatterComponent.highlightPoint) {
-                  state.scatterComponent.highlightPoint(id);
-                }
-                
-                if (state.userScatterComponent && state.userScatterComponent.highlightPoint) {
-                  state.userScatterComponent.highlightPoint(id);
-                }
-              }
-            });
-            
-            // Add hover effect
-            item.addEventListener('mouseenter', () => {
-              item.style.background = '#f0f0f0';
-            });
-            
-            item.addEventListener('mouseleave', () => {
-              item.style.background = 'transparent';
-            });
-          });
-          
-          detailsPanel.appendChild(list);
-        } catch (error) {
-          console.error("Error showing similarity panel:", error);
-        }
-      }
-      
-      // Helper function to get color based on score
-      function getScoreColor(score) {
-        // Color gradient from red (0%) to green (100%)
-        if (score > 0.8) return '#4CAF50'; // Green
-        if (score > 0.6) return '#8BC34A'; // Light green
-        if (score > 0.4) return '#FFEB3B'; // Yellow
-        if (score > 0.2) return '#FF9800'; // Orange
-        return '#F44336'; // Red
-      }
-      
     } catch (error) {
       console.error("Error fetching API data:", error);
       hideLoadingIndicator();
@@ -681,177 +731,6 @@ function updateJobStatus(jobId, status) {
     showErrorMessage("Error initializing dashboard. Please try again later.");
   }
 })();
-
-/**
- * Setup job polling to check status periodically
- * @param {string} jobId - The job ID to poll
- * @param {number} maxAttempts - Maximum number of polling attempts
- */
-function setupJobPolling(jobId, maxAttempts = 60) {
-  console.log(`Setting up polling for job ${jobId}`);
-  
-  // Initialize job tracking in state
-  if (!state.jobPollingIntervals) {
-    state.jobPollingIntervals = {};
-  }
-  
-  // Track attempts
-  let attempts = 0;
-  
-  // Update progress indicator - with debugging
-  const progressIndicator = document.getElementById('job-progress');
-  console.log("Progress indicator element:", progressIndicator);
-  
-  // If progress indicator doesn't exist, create it
-  if (!progressIndicator) {
-    console.log("Creating progress indicator element");
-    const jobTrackerElement = document.querySelector('.job-tracker') || document.body;
-    const newProgressIndicator = document.createElement('div');
-    newProgressIndicator.id = 'job-progress';
-    newProgressIndicator.className = 'progress-container';
-    newProgressIndicator.innerHTML = `
-      <div class="progress-label">Processing DNA Sequence</div>
-      <div class="progress-bar-container">
-        <div class="progress-bar" style="width: 5%"></div>
-      </div>
-    `;
-    jobTrackerElement.appendChild(newProgressIndicator);
-    console.log("Created new progress indicator:", newProgressIndicator);
-  }
-  
-  // Get the progress indicator again (in case we just created it)
-  const updatedProgressIndicator = document.getElementById('job-progress');
-  if (updatedProgressIndicator) {
-    updatedProgressIndicator.style.display = 'block';
-    updatedProgressIndicator.innerHTML = `
-      <div class="progress-label">Processing DNA Sequence</div>
-      <div class="progress-bar-container">
-        <div class="progress-bar" style="width: 5%"></div>
-      </div>
-    `;
-    console.log("Updated progress indicator:", updatedProgressIndicator);
-  } else {
-    console.error("Failed to find or create progress indicator");
-  }
-  
-  // Add CSS for progress bar if not already present
-  if (!document.getElementById('progress-bar-styles')) {
-    const styleElement = document.createElement('style');
-    styleElement.id = 'progress-bar-styles';
-    styleElement.textContent = `
-      .progress-container {
-        margin: 15px 0;
-        width: 100%;
-      }
-      .progress-label {
-        font-size: 14px;
-        margin-bottom: 5px;
-        color: #333;
-      }
-      .progress-bar-container {
-        height: 10px;
-        background-color: #f0f0f0;
-        border-radius: 5px;
-        overflow: hidden;
-      }
-      .progress-bar {
-        height: 100%;
-        background-color: #4CAF50;
-        width: 0%;
-        transition: width 0.5s ease;
-      }
-    `;
-    document.head.appendChild(styleElement);
-    console.log("Added progress bar styles");
-  }
-  
-  // Set up interval for polling
-  const intervalId = setInterval(async () => {
-    try {
-      attempts++;
-      console.log(`Polling job ${jobId}, attempt ${attempts}/${maxAttempts}`);
-      
-      // Update progress percentage
-      const updatedProgressBar = document.getElementById('job-progress');
-      if (updatedProgressBar) {
-        const percentage = Math.min(5 + (attempts * 95 / maxAttempts), 95);
-        console.log(`Updating progress bar to ${percentage}%`);
-        updatedProgressBar.querySelector('.progress-bar').style.width = `${percentage}%`;
-      } else {
-        console.error("Cannot find progress bar element for update");
-      }
-      
-      // Check job status
-      const jobData = await checkJobStatus(jobId);
-      
-      if (jobData.status === 'completed') {
-        console.log(`Job ${jobId} completed successfully`);
-        
-        // Update progress to 100%
-        const completedProgressBar = document.getElementById('job-progress');
-        if (completedProgressBar) {
-          console.log("Setting progress to 100%");
-          completedProgressBar.querySelector('.progress-bar').style.width = "100%";
-          // Hide progress after a delay
-          setTimeout(() => {
-            completedProgressBar.style.display = 'none';
-          }, 1000);
-        } else {
-          console.error("Cannot find progress bar element for completion");
-        }
-        
-        try {
-          // Process the results
-          const results = await processSequenceResults(jobId, jobData);
-          
-          // Update visualization and UI
-          await updateVisualizationWithResults(results);
-          
-          // Show success message
-          showInfoMessage("Sequence analysis complete!");
-        } catch (error) {
-          console.error("Error processing job results:", error);
-          showErrorMessage(`Error processing results: ${error.message}`);
-        }
-        
-        // Stop polling
-        clearInterval(state.jobPollingIntervals[jobId]);
-        delete state.jobPollingIntervals[jobId];
-      } else if (jobData.status === 'failed') {
-        console.error(`Job ${jobId} failed: ${jobData.error || 'Unknown error'}`);
-        showErrorMessage(`Job ${jobId} failed: ${jobData.error || 'Unknown error'}`);
-        
-        // Hide progress
-        const failedProgressBar = document.getElementById('job-progress');
-        if (failedProgressBar) {
-          failedProgressBar.style.display = 'none';
-        }
-        
-        // Stop polling
-        clearInterval(state.jobPollingIntervals[jobId]);
-        delete state.jobPollingIntervals[jobId];
-      } else if (attempts >= maxAttempts) {
-        console.warn(`Reached maximum polling attempts (${maxAttempts}) for job ${jobId}`);
-        showErrorMessage(`Job ${jobId} is taking too long. Please check back later.`);
-        
-        // Hide progress
-        const timeoutProgressBar = document.getElementById('job-progress');
-        if (timeoutProgressBar) {
-          timeoutProgressBar.style.display = 'none';
-        }
-        
-        // Stop polling
-        clearInterval(state.jobPollingIntervals[jobId]);
-        delete state.jobPollingIntervals[jobId];
-      }
-    } catch (error) {
-      console.error(`Error polling job ${jobId}:`, error);
-    }
-  }, 5000); // Poll every 5 seconds
-  
-  // Store interval ID for cleanup
-  state.jobPollingIntervals[jobId] = intervalId;
-}
 
 // Add the missing addSimilarityConnectionsToggle function
 function addSimilarityConnectionsToggle() {
