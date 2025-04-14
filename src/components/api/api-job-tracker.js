@@ -6,290 +6,303 @@
 import { checkJobStatus } from './api-service.js'
 
 /**
- * Creates a job tracker for monitoring job status
- * @param {string} jobId - ID of the job to track
- * @param {Object} options - Configuration options
- * @returns {Object} Job tracker controller
+ * Create a job tracker component
+ * @param {string} jobId - Job ID to track
+ * @param {Object} options - Tracker options
+ * @returns {Object} Job tracker component
  */
 function createJobTracker(jobId, options = {}) {
   const defaultOptions = {
-    initialInterval: 2000, // Start polling every 2 seconds
-    maxInterval: 10000, // Maximum polling interval of 10 seconds
-    backoffFactor: 1.5, // Increase interval by 50% after each check
-    container: document.body, // Default container
-    onStatusChange: null, // Status change callback
-    onComplete: null, // Job completion callback
-    onError: null, // Error callback
+    container: document.getElementById('user-scatter-container'),
+    onStatusChange: null,
+    onComplete: null,
+    onError: null,
+    floating: true // New option to make the tracker float
+  };
+  
+  const config = { ...defaultOptions, ...options };
+  
+  // Create the tracker element
+  const trackerElement = document.createElement('div');
+  trackerElement.id = `job-tracker-${jobId}`;
+  trackerElement.className = config.floating ? 'job-tracker floating-tracker' : 'job-tracker';
+  trackerElement.innerHTML = `
+    <div class="job-tracker-header">
+      <span class="job-tracker-title">Processing DNA Sequence</span>
+      <span class="job-tracker-status">Initializing...</span>
+    </div>
+    <div class="job-tracker-progress-container">
+      <div id="job-progress-bar" class="job-tracker-progress-bar" style="width: 0%;"></div>
+    </div>
+    <div id="job-progress-text" class="job-tracker-message">Preparing sequence...</div>
+  `;
+  
+  // Add custom CSS to ensure progress bar works and position it properly
+  const style = document.createElement('style');
+  style.textContent = `
+    .job-tracker {
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      padding: 16px;
+      margin-bottom: 16px;
+      width: 100%;
+      max-width: 400px;
+      z-index: 1000;
+    }
+    
+    .floating-tracker {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 350px;
+      animation: slide-in 0.3s ease-out;
+    }
+    
+    @keyframes slide-in {
+      from {
+        transform: translateY(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+    
+    .job-tracker-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    
+    .job-tracker-title {
+      font-weight: bold;
+    }
+    
+    .job-tracker-status {
+      font-size: 14px;
+      color: #666;
+    }
+    
+    .job-tracker-progress-container {
+      height: 8px;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 8px;
+      position: relative;
+    }
+    
+    .job-tracker-progress-bar {
+      height: 100%;
+      background-color: #3498db;
+      border-radius: 4px;
+      transition: width 0.5s ease;
+      width: 0%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    
+    .job-tracker-message {
+      font-size: 14px;
+      color: #666;
+      text-align: center;
+    }
+  `;
+  document.head.appendChild(style);
+  
+  // Current state
+  let currentStatus = 'initializing';
+  let progressValue = 0;
+  let isShown = false;
+  
+  // Function to update the progress bar
+  function updateProgress(value, animated = true) {
+    progressValue = value;
+    const progressBar = trackerElement.querySelector('.job-tracker-progress-bar');
+    if (progressBar) {
+      if (animated) {
+        progressBar.style.transition = 'width 0.5s ease';
+      } else {
+        progressBar.style.transition = 'none';
+      }
+      progressBar.style.width = `${value}%`;
+      
+      // Force a reflow to ensure the animation happens
+      void progressBar.offsetWidth;
+      
+      console.log(`Updated progress bar to ${value}%`);
+    } else {
+      console.warn('Progress bar element not found');
+    }
   }
-
-  const config = { ...defaultOptions, ...options }
-  let currentInterval = config.initialInterval
-  let isPolling = false
-  let pollTimer = null
-  let currentStatus = 'unknown'
-
-  // Create job tracker UI
-  const trackerElement = document.createElement('div')
-  trackerElement.className = 'job-tracker'
-  trackerElement.style.position = 'fixed'
-  trackerElement.style.bottom = '20px'
-  trackerElement.style.right = '20px'
-  trackerElement.style.width = '300px'
-  trackerElement.style.backgroundColor = 'white'
-  trackerElement.style.borderRadius = '5px'
-  trackerElement.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)'
-  trackerElement.style.padding = '15px'
-  trackerElement.style.zIndex = '1000'
-  trackerElement.style.display = 'none'
-
-  const headerElement = document.createElement('div')
-  headerElement.className = 'job-tracker-header'
-  headerElement.style.display = 'flex'
-  headerElement.style.justifyContent = 'space-between'
-  headerElement.style.alignItems = 'center'
-  headerElement.style.marginBottom = '10px'
-
-  const titleElement = document.createElement('h4')
-  titleElement.textContent = 'Processing DNA Sequence'
-  titleElement.style.margin = '0'
-  titleElement.style.fontSize = '16px'
-
-  const closeButton = document.createElement('button')
-  closeButton.innerHTML = '&times;'
-  closeButton.style.background = 'none'
-  closeButton.style.border = 'none'
-  closeButton.style.fontSize = '20px'
-  closeButton.style.cursor = 'pointer'
-  closeButton.style.padding = '0'
-  closeButton.style.lineHeight = '1'
-  closeButton.addEventListener('click', () => {
-    trackerElement.style.display = 'none'
-  })
-
-  headerElement.appendChild(titleElement)
-  headerElement.appendChild(closeButton)
-
-  const statusElement = document.createElement('div')
-  statusElement.className = 'job-status'
-  statusElement.style.marginBottom = '15px'
-
-  const progressContainer = document.createElement('div')
-  progressContainer.className = 'progress-container'
-  progressContainer.style.marginBottom = '10px'
-
-  const progressBar = document.createElement('div')
-  progressBar.className = 'progress-bar'
-  progressBar.style.height = '8px'
-  progressBar.style.backgroundColor = '#f0f0f0'
-  progressBar.style.borderRadius = '4px'
-  progressBar.style.overflow = 'hidden'
-
-  const progressFill = document.createElement('div')
-  progressFill.className = 'progress-fill'
-  progressFill.style.height = '100%'
-  progressFill.style.width = '0%'
-  progressFill.style.backgroundColor = '#4CAF50'
-  progressFill.style.transition = 'width 0.3s ease'
-
-  progressBar.appendChild(progressFill)
-  progressContainer.appendChild(progressBar)
-
-  const stepsContainer = document.createElement('div')
-  stepsContainer.className = 'steps-container'
-  stepsContainer.style.display = 'flex'
-  stepsContainer.style.justifyContent = 'space-between'
-  stepsContainer.style.marginTop = '5px'
-
-  const steps = [
-    { id: 'embedding', label: 'Embedding' },
-    { id: 'projecting', label: 'UMAP' },
-    { id: 'similarity', label: 'Similarity' },
-  ]
-
-  const stepElements = []
-
-  steps.forEach((step, index) => {
-    const stepElement = document.createElement('div')
-    stepElement.className = `step-${step.id}`
-    stepElement.textContent = step.label
-    stepElement.style.fontSize = '12px'
-    stepElement.style.color = '#6c757d'
-    stepElement.style.position = 'relative'
-
-    stepsContainer.appendChild(stepElement)
-    stepElements.push(stepElement)
-  })
-
-  progressContainer.appendChild(stepsContainer)
-
-  trackerElement.appendChild(headerElement)
-  trackerElement.appendChild(statusElement)
-  trackerElement.appendChild(progressContainer)
-
-  // Add to container
-  config.container.appendChild(trackerElement)
-
-  // Public methods
+  
+  // Function to update the status message
+  function updateStatus(status, jobData = {}) {
+    currentStatus = status;
+    
+    const statusElement = trackerElement.querySelector('.job-tracker-status');
+    const messageElement = trackerElement.querySelector('.job-tracker-message');
+    
+    console.log(`Updating job tracker status to: ${status}`);
+    
+    if (statusElement) {
+      // Map API status to user-friendly status text
+      let statusText = status;
+      if (status === 'initializing') statusText = 'Initializing...';
+      if (status === 'queued') statusText = 'In Queue';
+      if (status === 'processing') statusText = 'Processing';
+      if (status === 'completed') statusText = 'Complete';
+      if (status === 'failed') statusText = 'Failed';
+      
+      statusElement.textContent = statusText;
+    }
+    
+    // Update progress based on status
+    if (status === 'initializing') {
+      updateProgress(5);
+      if (messageElement) messageElement.textContent = 'Preparing sequence...';
+    } else if (status === 'queued') {
+      updateProgress(10);
+      if (messageElement) messageElement.textContent = 'Waiting in queue...';
+    } else if (status === 'processing') {
+      // Don't update progress here, that's handled by the progress interval
+      if (messageElement) {
+        const progressStages = [
+          'Analyzing sequence...',
+          'Processing embeddings...',
+          'Calculating similarities...'
+        ];
+        
+        // Choose message based on current progress
+        const messageIndex = Math.floor((progressValue / 90) * progressStages.length);
+        messageElement.textContent = progressStages[Math.min(messageIndex, progressStages.length - 1)];
+      }
+    } else if (status === 'completed') {
+      updateProgress(100);
+      if (messageElement) messageElement.textContent = 'Analysis complete!';
+      if (statusElement) statusElement.textContent = 'Complete';
+      
+      const progressBar = trackerElement.querySelector('.job-tracker-progress-bar');
+      if (progressBar) progressBar.style.backgroundColor = '#4CAF50';
+      
+      // Auto-hide the tracker after 5 seconds when complete
+      setTimeout(() => {
+        hide();
+      }, 5000);
+    } else if (status === 'failed') {
+      updateProgress(100);
+      if (messageElement) messageElement.textContent = `Analysis failed: ${jobData.error || 'Unknown error'}`;
+      if (statusElement) statusElement.textContent = 'Failed';
+      
+      const progressBar = trackerElement.querySelector('.job-tracker-progress-bar');
+      if (progressBar) progressBar.style.backgroundColor = '#e74c3c';
+    }
+    
+    // Call the status change callback
+    if (typeof config.onStatusChange === 'function') {
+      config.onStatusChange(status, jobData);
+    }
+  }
+  
+  // Show the tracker
   function show() {
-    trackerElement.style.display = 'block'
+    if (!isShown) {
+      console.log("Showing job tracker");
+      
+      if (config.floating) {
+        // If floating, append to body
+        document.body.appendChild(trackerElement);
+      } else if (config.container) {
+        // If not floating, add to container
+        console.log("Showing job tracker in container:", config.container.id);
+        
+        // Keep other elements but remove any "flex" message
+        const flexMessage = config.container.querySelector('.flex');
+        if (flexMessage) {
+          flexMessage.style.display = 'none';
+        }
+        
+        // Add the tracker at the beginning of the container
+        if (config.container.firstChild) {
+          config.container.insertBefore(trackerElement, config.container.firstChild);
+        } else {
+          config.container.appendChild(trackerElement);
+        }
+      } else {
+        console.error("Container for job tracker not found and not floating");
+        // If no container and not floating, just add to body
+        document.body.appendChild(trackerElement);
+      }
+      
+      isShown = true;
+      
+      // Start with initial progress
+      updateProgress(5, false);
+    }
   }
-
+  
+  // Hide the tracker
   function hide() {
-    trackerElement.style.display = 'none'
-  }
-
-  function updateUI(status, message, progress) {
-    // Update status message
-    statusElement.textContent = message
-
-    // Update progress bar
-    progressFill.style.width = `${progress}%`
-
-    // Update step indicators
-    let currentStepIndex = -1
-
-    switch (status) {
-      case 'embedding':
-        currentStepIndex = 0
-        break
-      case 'projecting':
-        currentStepIndex = 1
-        break
-      case 'similarity':
-      case 'completed':
-        currentStepIndex = 2
-        break
-    }
-
-    // Reset all steps
-    stepElements.forEach((element, i) => {
-      element.style.fontWeight = 'normal'
-      element.style.color = '#6c757d'
-    })
-
-    if (currentStepIndex >= 0) {
-      for (let i = 0; i <= currentStepIndex; i++) {
-        const element = stepElements[i]
-        element.style.fontWeight = 'bold'
-        element.style.color = i === currentStepIndex ? '#4CAF50' : '#000'
-      }
+    if (isShown && trackerElement.parentNode) {
+      // Add fade-out animation
+      trackerElement.style.opacity = '0';
+      trackerElement.style.transform = 'translateY(20px)';
+      trackerElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      
+      // Remove after animation completes
+      setTimeout(() => {
+        if (trackerElement.parentNode) {
+          trackerElement.parentNode.removeChild(trackerElement);
+        }
+        isShown = false;
+      }, 300);
     }
   }
-
-  // Start polling for job status
-  function startPolling() {
-    if (isPolling) return
-
-    isPolling = true
-    pollForStatus()
-  }
-
-  // Stop polling
-  function stopPolling() {
-    isPolling = false
-    if (pollTimer) {
-      clearTimeout(pollTimer)
-      pollTimer = null
+  
+  // Mark job as complete
+  function complete(jobData = {}) {
+    updateStatus('completed', jobData);
+    
+    // Call the complete callback
+    if (typeof config.onComplete === 'function') {
+      config.onComplete(jobData);
     }
   }
-
-  // Poll for job status
-  async function pollForStatus() {
-    if (!isPolling) return
-
-    try {
-      const jobStatus = await checkJobStatus(jobId)
-
-      // Update status if changed
-      if (jobStatus.status !== currentStatus) {
-        currentStatus = jobStatus.status
-
-        // Calculate progress based on status
-        let progress = 0
-        let message = ''
-
-        switch (currentStatus) {
-          case 'queued':
-            progress = 5
-            message = 'Job is queued for processing...'
-            break
-          case 'embedding':
-            progress = 25
-            message = 'Creating sequence embedding...'
-            break
-          case 'projecting':
-            progress = 60
-            message = 'Generating UMAP projection...'
-            break
-          case 'similarity':
-            progress = 85
-            message = 'Finding similar sequences...'
-            break
-          case 'completed':
-            progress = 100
-            message = 'Analysis completed successfully!'
-            break
-          case 'failed':
-            progress = 100
-            message = 'Analysis failed. Please try again.'
-            break
-          default:
-            progress = 10
-            message = 'Processing...'
-        }
-
-        // Update UI
-        updateUI(currentStatus, message, progress)
-
-        // Call status change callback
-        if (config.onStatusChange) {
-          config.onStatusChange(currentStatus, jobStatus)
-        }
-
-        // Handle completion
-        if (currentStatus === 'completed') {
-          if (config.onComplete) {
-            config.onComplete(jobStatus)
-          }
-          stopPolling()
-          return
-        }
-
-        // Handle failure
-        if (currentStatus === 'failed') {
-          if (config.onError) {
-            config.onError(new Error(jobStatus.error || 'Job failed'))
-          }
-          stopPolling()
-          return
-        }
-      }
-
-      // Continue polling with backoff
-      currentInterval = Math.min(
-        currentInterval * config.backoffFactor,
-        config.maxInterval
-      )
-      pollTimer = setTimeout(pollForStatus, currentInterval)
-    } catch (error) {
-      console.error('Error polling job status:', error)
-
-      // Update UI to show error
-      updateUI('error', 'Error checking job status. Retrying...', 0)
-
-      // Try again after a delay
-      pollTimer = setTimeout(pollForStatus, config.initialInterval)
+  
+  // Mark job as failed
+  function error(errorMsg) {
+    updateStatus('failed', { error: errorMsg });
+    
+    // Call the error callback
+    if (typeof config.onError === 'function') {
+      config.onError(errorMsg);
     }
   }
-
-  // Return public API
+  
+  // Mark job as timed out
+  function timeout() {
+    updateStatus('failed', { error: 'Job timed out' });
+    
+    // Call the error callback
+    if (typeof config.onError === 'function') {
+      config.onError('Job timed out');
+    }
+  }
+  
+  // Create and expose the public API
   return {
     show,
     hide,
-    startPolling,
-    stopPolling,
-    updateUI,
-  }
+    updateStatus,
+    updateProgress,
+    complete,
+    error,
+    timeout,
+    element: trackerElement
+  };
 }
 
-export { createJobTracker }
+export { createJobTracker };

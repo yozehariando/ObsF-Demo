@@ -248,6 +248,7 @@ async function handleJobCompletion(jobId, jobData) {
 // Function to set up job polling
 function setupJobPolling(jobId, maxAttempts = 60) {
   let attempts = 0;
+  let lastProgress = 5; // Start at 5%
   
   console.log(`Setting up polling for job ${jobId}`);
   
@@ -260,47 +261,136 @@ function setupJobPolling(jobId, maxAttempts = 60) {
     }
   };
   
-  // Set up the interval
+  // Direct manual update of progress text
+  function updateProgressText(status, progress) {
+    console.log(`Manually updating progress text - Status: ${status}, Progress: ${progress}%`);
+    
+    // Directly update status element
+    const statusElement = document.querySelector('.job-tracker-status');
+    if (statusElement) {
+      let statusText = status;
+      if (status === 'initializing') statusText = 'Initializing...';
+      if (status === 'queued') statusText = 'In Queue';
+      if (status === 'processing') statusText = 'Processing';
+      if (status === 'completed') statusText = 'Complete';
+      if (status === 'failed') statusText = 'Failed';
+      
+      console.log(`Setting status text to: ${statusText}`);
+      statusElement.textContent = statusText;
+    }
+    
+    // Directly update progress message
+    const messageElement = document.getElementById('job-progress-text');
+    if (messageElement) {
+      let message = 'Processing...';
+      
+      if (status === 'initializing') {
+        message = 'Preparing sequence...';
+      } else if (status === 'queued') {
+        message = 'Waiting in queue...';
+      } else if (status === 'processing') {
+        // Choose message based on progress
+        if (progress < 30) {
+          message = 'Analyzing sequence...';
+        } else if (progress < 60) {
+          message = 'Processing embeddings...';
+        } else {
+          message = 'Calculating similarities...';
+        }
+      } else if (status === 'completed') {
+        message = 'Analysis complete!';
+      } else if (status === 'failed') {
+        message = 'Analysis failed';
+      }
+      
+      console.log(`Setting message text to: ${message}`);
+      messageElement.textContent = message;
+    }
+    
+    // Directly update progress bar
+    const progressBar = document.getElementById('job-progress-bar');
+    if (progressBar) {
+      console.log(`Setting progress bar width to: ${progress}%`);
+      progressBar.style.width = `${progress}%`;
+      
+      if (status === 'completed') {
+        progressBar.style.backgroundColor = '#4CAF50';
+      } else if (status === 'failed') {
+        progressBar.style.backgroundColor = '#e74c3c';
+      }
+    }
+  }
+  
+  // Set up more frequent PROGRESS updates (every 1 second)
+  const progressInterval = setInterval(() => {
+    // Calculate smooth progress increase
+    const normalizedAttempt = attempts / maxAttempts;
+    const sigmoid = 1 / (1 + Math.exp(-12 * (normalizedAttempt - 0.5)));
+    const targetProgress = Math.min(5 + sigmoid * 90, 90); // Start at 5%, cap at 90%
+    
+    // Smoothly approach the target progress
+    lastProgress = lastProgress + (targetProgress - lastProgress) * 0.1;
+    
+    // Update the tracker
+    updateProgressText('processing', lastProgress);
+    
+    // Also update through the job tracker API if it exists
+    if (state.jobTracker) {
+      state.jobTracker.updateProgress(lastProgress);
+    }
+  }, 1000);
+  
+  // Set up the STATUS check interval (every 5 seconds)
   const intervalId = setInterval(async () => {
     attempts++;
     
     try {
       console.log(`Polling job ${jobId}, attempt ${attempts}/${maxAttempts}`);
       
-      // Update progress bar if it exists
-      const progressBar = document.getElementById('job-progress-bar');
-      if (progressBar) {
-        const progress = Math.min((attempts / maxAttempts) * 100, 95);
-        progressBar.style.width = `${progress}%`;
-      }
-      
       // Check job status
       const jobData = await checkJobStatus(jobId);
+      console.log(`Job status: ${jobData.status}`, jobData);
+      
+      let currentStatus = jobData.status;
+      
+      // Force transition to processing after a few attempts
+      if (currentStatus === 'initializing' && attempts >= 3) {
+        currentStatus = 'processing';
+      }
       
       // Update job tracker if it exists
       if (state.jobTracker) {
-        state.jobTracker.updateStatus(jobData.status, jobData);
+        state.jobTracker.updateStatus(currentStatus, jobData);
       }
       
       // Handle different job statuses
       if (jobData.status === 'completed') {
         console.log(`Job ${jobId} completed successfully`);
         
-        // Stop polling
+        // Clear both intervals
         stopPolling();
+        clearInterval(progressInterval);
         
-        // Process the results
-        await handleJobCompletion(jobId, jobData);
+        // Force update the progress display to completed
+        updateProgressText('completed', 100);
         
         // Update job tracker
         if (state.jobTracker) {
+          state.jobTracker.updateProgress(100);
           state.jobTracker.complete(jobData);
         }
+        
+        // Process the results
+        await handleJobCompletion(jobId, jobData);
       } else if (jobData.status === 'failed') {
         console.error(`Job ${jobId} failed:`, jobData.error || 'Unknown error');
         
-        // Stop polling
+        // Clear both intervals
         stopPolling();
+        clearInterval(progressInterval);
+        
+        // Force update the progress display to failed
+        updateProgressText('failed', 100);
         
         // Show error message
         showErrorMessage(`Job failed: ${jobData.error || 'Unknown error'}`);
@@ -312,8 +402,12 @@ function setupJobPolling(jobId, maxAttempts = 60) {
       } else if (attempts >= maxAttempts) {
         console.warn(`Job ${jobId} polling timed out after ${maxAttempts} attempts`);
         
-        // Stop polling
+        // Clear both intervals
         stopPolling();
+        clearInterval(progressInterval);
+        
+        // Force update the progress display to failed
+        updateProgressText('failed', 100);
         
         // Show timeout message
         showWarningMessage(`Job ${jobId} is taking too long. Please check back later.`);
@@ -322,17 +416,23 @@ function setupJobPolling(jobId, maxAttempts = 60) {
         if (state.jobTracker) {
           state.jobTracker.timeout();
         }
+      } else {
+        // For ongoing jobs, manually update the progress text
+        updateProgressText(currentStatus, lastProgress);
       }
     } catch (error) {
       console.error(`Error polling job ${jobId}:`, error);
     }
-  }, 5000); // Poll every 5 seconds
+  }, 5000); // Poll every 5 seconds for status
   
   // Store interval ID for cleanup
   state.jobPollingIntervals[jobId] = intervalId;
   
-  // Return the stop function
-  return stopPolling;
+  // Return an enhanced stop function that clears both intervals
+  return () => {
+    stopPolling();
+    clearInterval(progressInterval);
+  };
 }
 
 // Add utility functions for showing messages and loading indicators
@@ -668,12 +768,12 @@ function updateJobStatus(jobId, status) {
               // Create job tracker
               const jobId = uploadResult.job_id;
               state.jobTracker = createJobTracker(jobId, {
+                floating: true,
                 onStatusChange: (status, jobData) => {
                   console.log(`Job status changed to: ${status}`);
                 },
                 onComplete: async (jobData) => {
                   console.log("Job completed:", jobData);
-                  // The processing will be handled by the polling function
                 },
                 onError: (error) => {
                   console.error("Job failed:", error);
