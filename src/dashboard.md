@@ -21,7 +21,7 @@ This dashboard demonstrates a modular approach to visualizing DNA mutation data.
   </div>
   <div class="card p-4">
     <h2 class="mb-4">User Sequence UMAP</h2>
-    <div id="user-scatter-container" style="width: 100%; height: 550px; position: relative; overflow: visible;"></div>
+    <div id="user-scatter-container" style="width: 100%; height: 460px; position: relative; overflow: visible; display: flex; flex-direction: column;"></div>
     <div class="flex justify-between items-center mt-3">
       <button id="upload-fasta-button" class="btn btn-primary">Upload FASTA Sequence</button>
       <button id="reset-user-sequences" class="btn btn-secondary">Reset Sequences</button>
@@ -2433,14 +2433,21 @@ function createEmergencyVisualization(container, data) {
   tooltip.style.cssText = 'position: absolute; display: none; background: white; border: 1px solid #ccc; border-radius: 4px; padding: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); pointer-events: none; z-index: 1000;';
   container.appendChild(tooltip);
   
-  // Create SVG element
-  const margin = { top: 20, right: 20, bottom: 40, left: 40 };
-  const width = container.clientWidth - margin.left - margin.right;
-  const height = container.clientHeight - margin.top - margin.bottom - 60; // Reduce height to make room for info below
-  
+  // Create SVG element with fixed dimensions to match the mockup
+  const margin = { top: 20, right: 20, bottom: 50, left: 40 }; // Increased bottom margin
+  const svgWidth = 565;
+  const svgHeight = 350; // Fixed height
+  const width = svgWidth - margin.left - margin.right;
+  const height = svgHeight - margin.top - margin.bottom;
+
   const svg = d3.create("svg")
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom);
+    .attr("width", svgWidth)
+    .attr("height", svgHeight)
+    .attr("viewBox", `0,0,${svgWidth},${svgHeight}`)
+    .style("max-width", "100%")
+    .style("height", "350px") // Fixed height
+    .style("display", "block")
+    .style("border", "1px solid #eee");
   
   const g = svg.append("g")
     .attr("transform", `translate(${margin.left},${margin.top})`);
@@ -2485,14 +2492,14 @@ function createEmergencyVisualization(container, data) {
   
   // Add axis labels
   g.append("text")
-    .attr("class", "x-label")
+    .attr("class", "x-axis-label")
     .attr("text-anchor", "middle")
     .attr("x", width / 2)
     .attr("y", height + margin.bottom - 5)
     .text("UMAP Dimension 1");
   
   g.append("text")
-    .attr("class", "y-label")
+    .attr("class", "y-axis-label")
     .attr("text-anchor", "middle")
     .attr("transform", "rotate(-90)")
     .attr("x", -height / 2)
@@ -2574,106 +2581,155 @@ function createEmergencyVisualization(container, data) {
     .attr("y2", d => yScale(d.target.y))
     .attr("data-source", d => d.source.id)
     .attr("data-target", d => d.target.id)
-    .style("stroke", d => {
-      // Color based on similarity
-      const similarity = d.similarity || 0;
-      if (similarity > 0.9) return "#3F51B5";
-      if (similarity > 0.7) return "#7986CB";
-      return "#9FA8DA";
-    })
-    .style("stroke-width", d => {
-      // Width based on similarity
-      const similarity = d.similarity || 0;
-      if (similarity > 0.9) return 1.5;
-      if (similarity > 0.7) return 1;
-      return 0.5;
-    })
-    .style("stroke-opacity", 0.6);
+    .style("stroke", "#999") // Use grey for all similarity lines
+    .style("stroke-width", 1)
+    .style("stroke-opacity", 0.4);
   
   // Format tooltip content function
-  function formatTooltip(d) {
-    // Safe check to ensure d exists
-    if (!d) {
-      console.warn("formatTooltip called with null data");
-      return '<div><em>No data available</em></div>';
+  function formatTooltip(data) {
+    if (!data || !data.id) {
+      console.warn('Invalid data for tooltip', data);
+      return '<div class="tooltip-content">No data available</div>';
+    }
+
+    let tooltipContent = `
+      <div class="tooltip-content">
+        <div class="tooltip-header">`;
+        
+    // Customize header based on type
+    if (data.isUserSequence) {
+      tooltipContent += `
+        <div style="color: #FF5722; font-weight: bold; margin-bottom: 3px;">User Sequence</div>
+        <strong>${data.label || data.id}</strong>`;
+    } else {
+      tooltipContent += `<strong>${data.id}</strong>`;
     }
     
-    // Extract coordinates with safety checks
-    const x = d.x !== undefined ? d.x.toFixed(4) : d.X !== undefined ? d.X.toFixed(4) : 'N/A';
-    const y = d.y !== undefined ? d.y.toFixed(4) : d.Y !== undefined ? d.Y.toFixed(4) : 'N/A';
-    
-    // For user uploaded sequences
-    if (d.isUserSequence) {
-      return `
-        <div style="font-weight: bold; color: #FF5722;">User Sequence</div>
-        <div>ID: ${d.id ? (d.id.length > 10 ? d.id.substring(0, 10) + '...' : d.id) : 'Unknown'}</div>
-        <div>Label: ${d.label || 'User Sequence'}</div>
-        <div><strong>Coordinates:</strong> (${x}, ${y})</div>
-      `;
+    tooltipContent += `
+        </div>
+        <div class="tooltip-body">`;
+        
+    // Add sequence type information at the top if it's a similar sequence
+    if (data.matchesUserSequence && !data.isUserSequence) {
+      tooltipContent += `<div class="tooltip-item" style="color: #3F51B5; font-weight: bold;">Similar Sequence</div>`;
+    }
+        
+    // Basic information
+    if (data.similarity !== undefined) {
+      tooltipContent += `<div class="tooltip-item">Similarity: ${(data.similarity * 100).toFixed(1)}%</div>`;
     }
     
-    // For similar sequences
-    if (d.matchesUserSequence) {
-      // Get basic info
-      const label = d.label || d.accession || 'Similar Sequence';
-      const similarity = d.similarity ? `${(d.similarity * 100).toFixed(1)}%` : 'Unknown';
+    // For user sequences, add upload info if available
+    if (data.isUserSequence) {
+      // Add ID information
+      tooltipContent += `<div class="tooltip-item">ID: ${data.id}</div>`;
       
-      // Add source indicators
-      let sourceText = '';
-      if (d.coordinateSource === 'cache' || d.coordinateSource === 'cache-xy') {
-        sourceText = '✅ From Reference UMAP';
-      } else if (d.coordinateSource === 'cache-flex' || d.coordinateSource === 'cache-flex-xy') {
-        sourceText = '✓ From Reference UMAP (partial match)';
-      } else if (d.coordinateSource === 'generated') {
-        sourceText = '⚠️ Generated position (not in Reference UMAP)';
+      // Add coordinates with precision
+      const x = data.x !== undefined ? data.x : (data.X !== undefined ? data.X : null);
+      const y = data.y !== undefined ? data.y : (data.Y !== undefined ? data.Y : null);
+      
+      if (x !== null && y !== null) {
+        tooltipContent += `<div class="tooltip-item">Coordinates: [${x.toFixed(4)}, ${y.toFixed(4)}]</div>`;
       }
       
-      let html = `
-        <div style="font-weight: bold; color: #3F51B5;">${label}</div>
-        <div><strong>Similarity:</strong> ${similarity}</div>
-        <div><strong>Coordinates:</strong> (${x}, ${y})</div>
-        <div style="color: ${d.coordinateSource === 'generated' ? '#9C27B0' : '#4CAF50'};">${sourceText}</div>
-      `;
-      
-      // Add ID if available
-      if (d.id) {
-        html += `<div><strong>ID:</strong> ${d.id.length > 10 ? d.id.substring(0, 10) + '...' : d.id}</div>`;
+      if (data.uploadTime) {
+        const uploadDate = new Date(data.uploadTime);
+        tooltipContent += `<div class="tooltip-item">Uploaded: ${uploadDate.toLocaleString()}</div>`;
       }
       
-      // Add metadata if available
-      if (d.metadata) {
-        html += '<hr style="margin: 5px 0; border-top: 1px solid #eee;">';
-        
-        if (d.metadata.accessions && d.metadata.accessions.length > 0) {
-          html += `<div><strong>Accession:</strong> ${d.metadata.accessions[0]}</div>`;
-        }
-        
-        if (d.metadata.country) {
-          html += `<div><strong>Country:</strong> ${d.metadata.country}</div>`;
-        }
-        
-        if (d.metadata.first_year) {
-          html += `<div><strong>Year:</strong> ${d.metadata.first_year}</div>`;
-        }
-        
-        if (d.metadata.host) {
-          html += `<div><strong>Host:</strong> ${d.metadata.host}</div>`;
-        }
-        
-        if (d.metadata.organism) {
-          html += `<div><strong>Organism:</strong> ${d.metadata.organism}</div>`;
-        }
+      if (data.sequenceLength) {
+        tooltipContent += `<div class="tooltip-item">Length: ${data.sequenceLength.toLocaleString()} bp</div>`;
       }
-      
-      return html;
     }
     
-    // For other points
-    return `
-      <div>Sequence Point</div>
-      <div>ID: ${d.id ? (d.id.length > 10 ? d.id.substring(0, 10) + '...' : d.id) : 'Unknown'}</div>
-      <div><strong>Coordinates:</strong> (${x}, ${y})</div>
+    // Add separator line if we have metadata to display
+    const hasMetadata = data.accession || data.country || data.year || data.host || data.organism || data.lineage;
+    const hasDetailedMetadata = data.metadata && (
+      data.metadata.accessions || 
+      data.metadata.country || 
+      data.metadata.first_year || 
+      data.metadata.host || 
+      data.metadata.organism ||
+      data.metadata.lineage
+    );
+    
+    if (hasMetadata || hasDetailedMetadata) {
+      tooltipContent += `<hr class="tooltip-separator">`;
+    }
+    
+    // Direct metadata properties
+    if (data.accession) {
+      tooltipContent += `<div class="tooltip-item">Accession: ${data.accession}</div>`;
+    }
+    
+    if (data.country) {
+      tooltipContent += `<div class="tooltip-item">Country: ${data.country}</div>`;
+    }
+    
+    if (data.year) {
+      tooltipContent += `<div class="tooltip-item">Year: ${data.year}</div>`;
+    }
+    
+    if (data.host) {
+      tooltipContent += `<div class="tooltip-item">Host: ${data.host}</div>`;
+    }
+    
+    if (data.organism) {
+      tooltipContent += `<div class="tooltip-item">Organism: ${data.organism}</div>`;
+    }
+    
+    if (data.lineage) {
+      tooltipContent += `<div class="tooltip-item">Lineage: ${data.lineage}</div>`;
+    }
+    
+    // Check for nested metadata
+    if (data.metadata) {
+      // Accessions from metadata
+      if (data.metadata.accessions && data.metadata.accessions.length > 0 && !data.accession) {
+        tooltipContent += `<div class="tooltip-item">Accession: ${data.metadata.accessions[0]}</div>`;
+      }
+      
+      // Country from metadata
+      if (data.metadata.country && !data.country) {
+        tooltipContent += `<div class="tooltip-item">Country: ${data.metadata.country}</div>`;
+      }
+      
+      // Year from metadata
+      if (data.metadata.first_year && !data.year) {
+        tooltipContent += `<div class="tooltip-item">Year: ${data.metadata.first_year}</div>`;
+      }
+      
+      // Host from metadata
+      if (data.metadata.host && !data.host) {
+        tooltipContent += `<div class="tooltip-item">Host: ${data.metadata.host}</div>`;
+      }
+      
+      // Organism from metadata
+      if (data.metadata.organism && !data.organism) {
+        tooltipContent += `<div class="tooltip-item">Organism: ${data.metadata.organism}</div>`;
+      }
+      
+      // Lineage from metadata
+      if (data.metadata.lineage && !data.lineage) {
+        tooltipContent += `<div class="tooltip-item">Lineage: ${data.metadata.lineage}</div>`;
+      }
+      
+      // Additional metadata fields that might be useful
+      if (data.metadata.clade) {
+        tooltipContent += `<div class="tooltip-item">Clade: ${data.metadata.clade}</div>`;
+      }
+      
+      if (data.metadata.region) {
+        tooltipContent += `<div class="tooltip-item">Region: ${data.metadata.region}</div>`;
+      }
+    }
+    
+    tooltipContent += `
+        </div>
+      </div>
     `;
+    
+    return tooltipContent;
   }
   
   // Add points (circles) with enhanced hover effects
@@ -2720,7 +2776,7 @@ function createEmergencyVisualization(container, data) {
         // Highlight connections
         if (id) {
           d3.selectAll(`line[data-source="${id}"], line[data-target="${id}"]`)
-            .style("stroke", "#2196F3")
+            .style("stroke", "#999") // Use grey for consistency
             .style("stroke-width", "1.5px")
             .style("opacity", "0.8");
         }
@@ -2846,96 +2902,44 @@ function createEmergencyVisualization(container, data) {
     .style("stroke-width", "0.5px")
     .style("paint-order", "stroke");
   
-  // Add a legend
-  const legend = g.append("g")
-    .attr("class", "legend")
-    .attr("transform", `translate(${width - 140}, 10)`);
-  
-  const legendItems = [
-    { label: "User Sequence", color: "#FF5722" },
-    { label: "Similar Sequence", color: "#3F51B5" },
-    { label: "Similarity Line", color: "#999", isLine: true }
-  ];
-  
-  legendItems.forEach((item, i) => {
-    const legendRow = legend.append("g")
-      .attr("transform", `translate(0, ${i * 20})`);
-    
-    if (item.isLine) {
-      // Add a line for the line legend item
-      legendRow.append("line")
-        .attr("x1", 0)
-        .attr("x2", 10)
-        .attr("y1", 5)
-        .attr("y2", 5)
-        .attr("stroke", item.color)
-        .attr("stroke-width", 2);
-    } else {
-      // Add a rect for point legend items
-      legendRow.append("circle")
-        .attr("cx", 5)
-        .attr("cy", 5)
-        .attr("r", 5)
-        .attr("fill", item.color);
-    }
-    
-    legendRow.append("text")
-      .attr("x", 15)
-      .attr("y", 9)
-      .text(item.label)
-      .style("font-size", "12px");
-  });
-  
+  // Create legend group position (commented out as we'll use the bottom legend instead)
+  // svg.append("g")
+  //   .attr("class", "legend-group")
+  //   .attr("transform", "translate(445, 20)");
+
   // Add the SVG to the container
   container.appendChild(svg.node());
   
   // Create info container below the chart with improved height and styling
   const infoContainer = document.createElement('div');
   infoContainer.className = 'umap-info-container';
-  infoContainer.style.cssText = `
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-top: 15px;
-    padding: 12px;
-    background: #f9f9f9;
-    border-radius: 4px;
-    font-size: 13px;
-    min-height: 120px; /* Ensure enough height for content */
-    max-height: 200px; /* Limit maximum height */
-    overflow-y: auto; /* Add scrolling if needed */
-    border: 1px solid #e0e0e0;
-    position: relative;
-    z-index: 10;
-    width: 100%;
-    box-sizing: border-box;
-  `;
+  // No need for inline styles since we have a CSS class with the same styles
   
   // Create diagnostic info with improved styling
   const diagnosticInfo = document.createElement('div');
   diagnosticInfo.className = 'sequence-stats';
   diagnosticInfo.style.cssText = `
     flex: 1;
-    margin-right: 15px;
-    padding-right: 15px;
-    border-right: 1px solid #e0e0e0;
+    padding-right: 10px;
+    font-size: 12px;
   `;
   diagnosticInfo.innerHTML = `
-    <div style="font-weight: bold; margin-bottom: 8px; font-size: 14px;">Sequence Stats</div>
-    <div style="margin-bottom: 5px;">Total sequences: <strong>${data.length}</strong></div>
-    <div style="margin-bottom: 5px;">User sequences: <strong>${userSeqCount}</strong></div>
-    <div style="margin-bottom: 5px;">Similar sequences: <strong>${similarSeqCount}</strong></div>
+    <div style="font-weight: bold; margin-bottom: 4px;">Sequence Stats</div>
+    <div style="margin-bottom: 2px;">Total sequences: <strong>${data.length}</strong></div>
+    <div style="margin-bottom: 2px;">User sequences: <strong>${userSeqCount}</strong></div>
+    <div style="margin-bottom: 2px;">Similar sequences: <strong>${similarSeqCount}</strong></div>
   `;
   
   // Create legend with improved styling
   const infoLegend = createLegend(null, [
     { color: '#FF5722', label: 'User Sequence' },
-    { color: '#3F51B5', label: 'Reference UMAP Match' },
-    { color: '#9C27B0', label: 'Generated Position' }
+    { color: '#3F51B5', label: 'Similar Sequence' },
+    { color: '#999', label: 'Similarity Line' }
   ]);
   infoLegend.style.cssText = `
     flex: 1;
     padding-left: 5px;
+    font-size: 12px;
   `;
   
   // Add the info sections to the container
@@ -3157,16 +3161,28 @@ function createLegend(container, items, title = 'Legend') {
   legend.className = 'sequence-legend';
   
   // Start with the title
-  let legendHtml = `<div style="font-weight: bold; margin-bottom: 8px; font-size: 14px;">${title}</div>`;
+  let legendHtml = `<div style="font-weight: bold; margin-bottom: 4px;">${title}</div>`;
   
   // Add each item
   items.forEach(item => {
-    legendHtml += `
-      <div style="display: flex; align-items: center; margin: 5px 0;">
-        <span style="display: inline-block; width: 14px; height: 14px; background: ${item.color}; border-radius: 50%; margin-right: 8px;"></span>
-        <span style="line-height: 1.4;">${item.label}</span>
-      </div>
-    `;
+    // Check if this is the similarity line item
+    if (item.label === 'Similarity Line') {
+      // Create a horizontal line for the similarity line legend item
+      legendHtml += `
+        <div style="display: flex; align-items: center; margin: 3px 0;">
+          <span style="display: inline-block; width: 14px; height: 2px; background: ${item.color}; margin-right: 8px;"></span>
+          <span style="font-size: 12px;">${item.label}</span>
+        </div>
+      `;
+    } else {
+      // Create a bullet point for other items
+      legendHtml += `
+        <div style="display: flex; align-items: center; margin: 3px 0;">
+          <span style="display: inline-block; width: 12px; height: 12px; background: ${item.color}; border-radius: 50%; margin-right: 8px;"></span>
+          <span style="font-size: 12px;">${item.label}</span>
+        </div>
+      `;
+    }
   });
   
   // Set the HTML content
@@ -3189,14 +3205,9 @@ function getStandardPointColor(point) {
   if (!point) return '#999'; // Default gray
   
   if (point.isUserSequence) {
-    return '#FF5722'; // User sequence - orange
+    return '#FF5722'; // User Sequence - orange
   } else if (point.matchesUserSequence) {
-    // Check for coordinate source to distinguish between reference and generated
-    if (point.coordinateSource === 'cache' || point.coordinateSource === 'api') {
-      return '#3F51B5'; // Reference UMAP match - blue
-    } else {
-      return '#9C27B0'; // Generated position - purple
-    }
+    return '#3F51B5'; // Similar Sequence - blue
   } else if (point.isHighlighted) {
     return '#FFC107'; // Highlighted point - amber
   }
@@ -3279,22 +3290,67 @@ document.head.insertAdjacentHTML('beforeend', `
     #user-scatter-container {
       display: flex;
       flex-direction: column;
+      padding-bottom: 0;
+      height: 460px; /* Fixed height to accommodate all elements */
+      position: relative;
     }
     
     #user-scatter-container svg {
-      flex: 1;
-      min-height: 400px;
+      width: 100%;
+      height: 350px; /* Fixed height */
+      max-height: 350px; /* Max height to prevent overflow */
+      display: block;
+      margin-bottom: 10px; /* Exactly 10px space to legend */
     }
     
     .umap-info-container {
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      box-shadow: none;
+      height: 90px; /* Fixed height of 90px */
+      margin-top: 0;
+      margin-bottom: 10px; /* Exactly 10px space to buttons */
+      border: 1px solid #eee;
+      background: #f9f9f9;
+      border-radius: 4px;
+      padding: 10px;
+      box-sizing: border-box;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      font-size: 12px;
+      width: 100%;
+      overflow: visible;
     }
     
     /* Make sequence legend stand out better */
     .sequence-legend {
-      background-color: rgba(255, 255, 255, 0.7);
-      padding: 8px;
-      border-radius: 4px;
+      padding: 0;
+      background-color: transparent;
+    }
+    
+    /* Adjust tooltip size for better fit in smaller visualization */
+    .tooltip-content {
+      max-width: 250px;
+      font-size: 12px;
+    }
+    
+    /* Ensure point labels are visible but not overwhelming */
+    .point-label {
+      font-size: 9px;
+    }
+    
+    /* Add empty state message styling */
+    .empty-state-message {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+    
+    .empty-state-message p {
+      text-align: center;
+      color: #6b7280;
+      margin-bottom: 1rem;
     }
   </style>
 `);
