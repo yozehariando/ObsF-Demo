@@ -21,7 +21,7 @@ This dashboard demonstrates a modular approach to visualizing DNA mutation data.
   </div>
   <div class="card p-4">
     <h2 class="mb-4">User Sequence UMAP</h2>
-    <div id="user-scatter-container" style="width: 100%; height: 410px; position: relative; overflow: hidden;"></div>
+    <div id="user-scatter-container" style="width: 100%; height: 550px; position: relative; overflow: visible;"></div>
     <div class="flex justify-between items-center mt-3">
       <button id="upload-fasta-button" class="btn btn-primary">Upload FASTA Sequence</button>
       <button id="reset-user-sequences" class="btn btn-secondary">Reset Sequences</button>
@@ -118,105 +118,71 @@ async function getUmapDataCache() {
   umapDataCache = [];
   
   try {
-    // Mock data if endpoint fails or is slow
-    const useMockData = false;
+    // Check for direct access to the API cache via window.apiCache
+    let allData = null;
     
-    if (useMockData) {
-      console.log('Using mock UMAP data cache for testing');
-      // Create some mock data for testing
-      for (let i = 0; i < 1000; i++) {
-        const id = `mock-${i}`;
-        umapDataCache.push({
-          id: id,
-          x: (Math.random() * 20) - 10,
-          y: (Math.random() * 20) - 10,
-          accession: `MOCK${i}`,
-          metadata: {
-            accessions: [`MOCK${i}`],
-            country: 'Mock Country',
-            first_year: 2020
-          }
-        });
-      }
-      console.log(`Created ${umapDataCache.length} mock sequences for cache`);
-      return umapDataCache;
-    }
-    
-    // Try to import API module
-    let fetchUmapData;
-    try {
-      const apiModule = await import('./components/api/api-service.js');
-      fetchUmapData = apiModule.fetchUmapData;
-      console.log("Successfully imported fetchUmapData function");
-    } catch (importError) {
-      console.error("Error importing fetchUmapData:", importError);
+    // Add retry mechanism for window.apiCache access
+    if (window.apiCache && typeof window.apiCache.getSequences === 'function') {
+      console.log('🔍 DEBUG: Accessing directly from window.apiCache');
       
-      // Fallback direct implementation
-      fetchUmapData = async (model = 'DNABERT-S') => {
-        console.log(`Direct fetchUmapData call for model ${model}`);
-        const API_BASE_URL = 'http://54.169.186.71/api/v1';
-        const API_KEY = 'test_key';
+      // Try to get data with retries if needed
+      const maxRetries = 3;
+      let retryCount = 0;
+      
+      while (retryCount < maxRetries) {
+        allData = window.apiCache.getSequences();
+        const cacheStatus = window.apiCache.getCacheStatus();
+        console.log(`🔍 DEBUG: API cache status (attempt ${retryCount + 1}):`, cacheStatus);
         
-        const url = `${API_BASE_URL}/pathtrack/umap/all?embedding_model=${encodeURIComponent(model)}&reduced=true`;
-        console.log(`Fetching UMAP data from ${url}`);
-        
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            accept: 'application/json',
-            'X-API-Key': API_KEY,
-          },
-        });
-        
-        if (!response.ok) {
-          throw new Error(`API request failed with status ${response.status}`);
-        }
-        
-        // Get the text response
-        const text = await response.text();
-        
-        // Split the text by newlines and parse each line as JSON
-        const jsonLines = text
-          .split('\n')
-          .filter((line) => line.trim() !== '')
-          .map((line) => {
-            try {
-              return JSON.parse(line);
-            } catch (e) {
-              console.warn('Failed to parse JSON line');
-              return null;
-            }
-          })
-          .filter((obj) => obj !== null);
-        
-        // Filter out metadata objects and keep only record objects
-        const records = jsonLines.filter((obj) => obj.type === 'record');
-        console.log(`Received ${records.length} UMAP data points`);
-        
-        // Print a sample of the raw data
-        if (records.length > 0) {
-          console.log('Sample of UMAP API response (raw record):');
-          console.log(JSON.stringify(records[0], null, 2));
+        if (allData && allData.length > 0) {
+          console.log(`🔍 DEBUG: Successfully retrieved ${allData.length} sequences from window.apiCache on attempt ${retryCount + 1}`);
+          break; // Success - exit the loop
+        } else {
+          console.log(`🔍 DEBUG: No data in window.apiCache on attempt ${retryCount + 1}, waiting...`);
           
-          if (records[0].coordinates) {
-            console.log('First record has coordinates in format:', 
-                       typeof records[0].coordinates, 
-                       Array.isArray(records[0].coordinates) ? 'array' : 'not array',
-                       records[0].coordinates);
-          } else {
-            console.log('First record does NOT have coordinates property');
+          if (cacheStatus && cacheStatus.isFetching) {
+            console.log('🔍 DEBUG: API cache is currently being fetched, waiting for completion...');
           }
           
-          console.log('Raw record keys:', Object.keys(records[0]));
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          retryCount++;
         }
-        
-        return records;
-      };
+      }
+      
+      if (!allData || allData.length === 0) {
+        console.log('🔍 DEBUG: All retry attempts failed, falling back to other methods');
+      }
     }
     
-    // Fetch the data
-    const allData = await fetchUmapData('DNABERT-S', false);
-    console.log(`Fetched ${allData?.length || 0} sequences from API`);
+    // If direct access didn't work, try fetchAllSequences
+    if (!allData || allData.length === 0) {
+      if (typeof fetchAllSequences === 'function') {
+        console.log('Attempting to use already cached sequences from api-service.js');
+        allData = await fetchAllSequences();
+        console.log(`Retrieved ${allData?.length || 0} sequences from existing cache`);
+      } else {
+        // Fallback to original method
+        console.log('Falling back to direct fetchUmapData call');
+        allData = await fetchUmapData('DNABERT-S', false);
+        console.log(`Fetched ${allData?.length || 0} sequences from API`);
+      }
+    }
+    
+    // Last resort - try to manually force a refresh of the cache if available
+    if ((!allData || allData.length === 0) && window.apiCache && typeof window.apiCache.refreshCache === 'function') {
+      console.log('🔍 DEBUG: Attempting to force refresh the API cache...');
+      const refreshResult = await window.apiCache.refreshCache();
+      console.log('🔍 DEBUG: Cache refresh result:', refreshResult);
+      
+      if (refreshResult.success) {
+        // Try again to get the refreshed data
+        allData = window.apiCache.getSequences();
+        console.log(`🔍 DEBUG: After refresh: Retrieved ${allData?.length || 0} sequences`);
+      }
+    }
+    
+    console.log(`🔍 DEBUG: Processing ${allData?.length || 0} sequences for UMAP data cache`);
     
     // Print a sample of the raw data
     if (allData && allData.length > 0) {
@@ -225,75 +191,80 @@ async function getUmapDataCache() {
     }
     
     // Process each sequence
-    allData.forEach(seq => {
-      if (seq) {
-        let sequenceId = seq.sequence_hash || seq.id;
-        let coordinates = seq.coordinates;
-        
-        if (sequenceId && coordinates && Array.isArray(coordinates) && coordinates.length >= 2) {
-          umapDataCache.push({
-            id: sequenceId,
-            x: coordinates[0],
-            y: coordinates[1],
-            accession: seq.accession,
-            metadata: {
-              accessions: seq.accession ? [seq.accession] : [],
-              country: seq.first_country || 'Unknown',
-              first_year: seq.first_date ? new Date(seq.first_date).getFullYear() : null
-            }
-          });
-        }
-      }
-    });
-    
-    console.log(`Cached ${umapDataCache.length} sequences with coordinates`);
-    
-    // Print first few items from the cache to understand structure
-    if (umapDataCache.length > 0) {
-      console.log('Sample cached sequence:', umapDataCache[0]);
-      
-      // Print the first 5 items to see patterns
-      console.log('First 5 cached sequences:');
-      umapDataCache.slice(0, 5).forEach((item, idx) => {
-        console.log(`Cache item ${idx}:`, {
-          id: item.id,
-          x: item.x,
-          y: item.y,
-          accession: item.accession,
-          metadata: item.metadata
-        });
-      });
-      
-      // Print some items with accession in different format
-      const samplesWithNZ = umapDataCache.filter(item => item.accession && item.accession.startsWith('NZ_')).slice(0, 3);
-      if (samplesWithNZ.length > 0) {
-        console.log('Samples with NZ_ prefix:');
-        samplesWithNZ.forEach((item, idx) => {
-          console.log(`  Sample ${idx}:`, {
-            accession: item.accession,
-            x: item.x,
-            y: item.y
-          });
-        });
-      }
-      
-      // Check for items with different accession formats
-      const accessionFormats = {};
-      umapDataCache.forEach(item => {
-        if (item.accession) {
-          // Look for common patterns
-          let format = 'other';
-          if (item.accession.startsWith('NZ_')) format = 'NZ_';
-          else if (item.accession.startsWith('NC_')) format = 'NC_';
-          else if (item.accession.startsWith('AL')) format = 'AL';
+    if (allData && allData.length > 0) {
+      allData.forEach(seq => {
+        if (seq) {
+          let sequenceId = seq.sequence_hash || seq.id;
+          let coordinates = seq.coordinates;
           
-          accessionFormats[format] = (accessionFormats[format] || 0) + 1;
+          if (sequenceId && coordinates && Array.isArray(coordinates) && coordinates.length >= 2) {
+            umapDataCache.push({
+              id: sequenceId,
+              x: coordinates[0],
+              y: coordinates[1],
+              accession: seq.accession,
+              metadata: {
+                accessions: seq.accession ? [seq.accession] : [],
+                country: seq.first_country || 'Unknown',
+                first_year: seq.first_date ? (typeof seq.first_date === 'string' ? new Date(seq.first_date).getFullYear() : seq.first_date) : null,
+                organism: seq.organism || null
+              }
+            });
+          }
         }
       });
-      console.log('Accession format distribution in cache:');
-      Object.entries(accessionFormats).forEach(([format, count]) => {
-        console.log(`  ${format}: ${count} items (${((count/umapDataCache.length)*100).toFixed(1)}%)`);
-      });
+      
+      console.log(`Cached ${umapDataCache.length} sequences with coordinates`);
+      
+      // Only log these stats when we have data
+      if (umapDataCache.length > 0) {
+        console.log('Sample cached sequence:', umapDataCache[0]);
+        
+        // Print the first 5 items to see patterns
+        console.log('First 5 cached sequences:');
+        umapDataCache.slice(0, 5).forEach((item, idx) => {
+          console.log(`Cache item ${idx}:`, {
+            id: item.id,
+            x: item.x,
+            y: item.y,
+            accession: item.accession,
+            metadata: item.metadata
+          });
+        });
+        
+        // Print some items with accession in different format
+        const samplesWithNZ = umapDataCache.filter(item => item.accession && item.accession.startsWith('NZ_')).slice(0, 3);
+        if (samplesWithNZ.length > 0) {
+          console.log('Samples with NZ_ prefix:');
+          samplesWithNZ.forEach((item, idx) => {
+            console.log(`  Sample ${idx}:`, {
+              accession: item.accession,
+              x: item.x,
+              y: item.y
+            });
+          });
+        }
+        
+        // Check for items with different accession formats
+        const accessionFormats = {};
+        umapDataCache.forEach(item => {
+          if (item.accession) {
+            // Look for common patterns
+            let format = 'other';
+            if (item.accession.startsWith('NZ_')) format = 'NZ_';
+            else if (item.accession.startsWith('NC_')) format = 'NC_';
+            else if (item.accession.startsWith('AL')) format = 'AL';
+            
+            accessionFormats[format] = (accessionFormats[format] || 0) + 1;
+          }
+        });
+        console.log('Accession format distribution in cache:');
+        Object.entries(accessionFormats).forEach(([format, count]) => {
+          console.log(`  ${format}: ${count} items (${((count/umapDataCache.length)*100).toFixed(1)}%)`);
+        });
+      }
+    } else {
+      console.error('🔍 DEBUG: No data available to process for UMAP data cache');
     }
     
     return umapDataCache;
@@ -626,8 +597,8 @@ async function handleJobCompletion(jobId, jobData) {
       
       console.log(`🔍 DEBUG: Extracted ${similarAccessionNumbers.length} accession numbers from similar sequences`);
       
-      // Directly search for these accessions
-      const matchedItems = await findExactMatchesInCache(similarAccessionNumbers);
+      // Directly search for these accessions using the improved search function
+      const matchedItems = await findAllMatchesInCache(similarAccessionNumbers);
       console.log(`🔍 DEBUG: Direct search found ${matchedItems.length} matches`);
       
       // If we find more matches this way, use them instead of the regular method
@@ -905,6 +876,9 @@ async function handleJobCompletion(jobId, jobData) {
     
     // Update visualizations
     updateUmapVisualization([userSequence, ...similarSequences]);
+    
+    // Store current sequences for potential cache refresh scenarios
+    window.currentSequences = [userSequence, ...similarSequences];
     
     // Update details panel
     updateDetailsWithSimilarSequences(userSequence, similarSequences);
@@ -1246,6 +1220,9 @@ function showMessage(message, type = 'info', duration = 5000) {
   setTimeout(() => {
     messageElement.classList.add('message-visible');
   }, 10);
+  
+  // Log the message to console
+  console.log(`Message (${type}): ${message}`);
 }
 
 // Add CSS for loading indicator and messages
@@ -1692,6 +1669,60 @@ function initializeUserScatterPlot(container, data = [], options = {}) {
       try {
         await fetchAllSequences();
         console.log("All sequences cached for similarity search");
+        
+        // Don't show debug stats here as the dashboard's umapDataCache isn't populated yet
+        // This would show misleading "0 entries" statistics
+        
+        // Add a utility function to manually search for accessions in the cache
+        window.findSequenceInCache = function(accessionQuery) {
+          if (!umapDataCache || !accessionQuery) {
+            console.log("Cache or query is empty");
+            return null;
+          }
+          
+          const query = accessionQuery.toLowerCase();
+          
+          // Direct match
+          const directMatch = umapDataCache.find(item => 
+            item.accession && item.accession.toLowerCase() === query
+          );
+          
+          if (directMatch) {
+            console.log("✅ Found direct match:", directMatch);
+            return directMatch;
+          }
+          
+          // Partial match
+          const partialMatches = umapDataCache.filter(item => 
+            item.accession && item.accession.toLowerCase().includes(query)
+          );
+          
+          if (partialMatches.length > 0) {
+            console.log(`✅ Found ${partialMatches.length} partial matches:`, 
+              partialMatches.slice(0, 5).map(m => m.accession));
+            return partialMatches;
+          }
+          
+          // Prefix without NZ_ match
+          if (query.startsWith('nz_')) {
+            const withoutPrefix = query.substring(3);
+            const prefixMatches = umapDataCache.filter(item => 
+              item.accession && item.accession.toLowerCase().includes(withoutPrefix)
+            );
+            
+            if (prefixMatches.length > 0) {
+              console.log(`✅ Found ${prefixMatches.length} matches without NZ_ prefix:`, 
+                prefixMatches.slice(0, 5).map(m => m.accession));
+              return prefixMatches;
+            }
+          }
+          
+          console.log("❌ No matches found for", accessionQuery);
+          return null;
+        };
+        
+        console.log("🔍 DEBUG: Added utility function 'findSequenceInCache()' to manually test accession numbers");
+        console.log("  Usage example: findSequenceInCache('NZ_QTIX00000000')");
       } catch (error) {
         console.error("Error caching sequences for similarity search:", error);
         // Continue anyway, as this is not critical for initial visualization
@@ -2396,17 +2427,6 @@ function createEmergencyVisualization(container, data) {
   // Clear the container
   container.innerHTML = '';
   
-  // Add diagnostic info visible to user for debugging
-  const diagnosticInfo = document.createElement('div');
-  diagnosticInfo.className = 'diagnostic-info';
-  diagnosticInfo.innerHTML = `
-    <div class="diag-item">Total points: <strong>${data.length}</strong></div>
-    <div class="diag-item">User sequences: <strong>${userSeqCount}</strong></div>
-    <div class="diag-item">Similar sequences: <strong>${similarSeqCount}</strong></div>
-  `;
-  diagnosticInfo.style.cssText = 'position: absolute; top: 5px; right: 5px; background: rgba(255,255,255,0.7); padding: 5px; border-radius: 4px; font-size: 11px; z-index: 100;';
-  container.appendChild(diagnosticInfo);
-  
   // Create tooltip element
   const tooltip = document.createElement('div');
   tooltip.className = 'viz-tooltip';
@@ -2416,7 +2436,7 @@ function createEmergencyVisualization(container, data) {
   // Create SVG element
   const margin = { top: 20, right: 20, bottom: 40, left: 40 };
   const width = container.clientWidth - margin.left - margin.right;
-  const height = container.clientHeight - margin.top - margin.bottom;
+  const height = container.clientHeight - margin.top - margin.bottom - 60; // Reduce height to make room for info below
   
   const svg = d3.create("svg")
     .attr("width", width + margin.left + margin.right)
@@ -2509,34 +2529,10 @@ function createEmergencyVisualization(container, data) {
     .style("stroke-width", 0.5);
   
   // Function to get color for point
-  const getPointColor = d => {
-    if (d.isUserSequence) return "#FF5722";
-    if (d.matchesUserSequence) {
-      // Different colors based on coordinate source
-      if (d.coordinateSource === 'cache' || d.coordinateSource === 'cache-flex' || 
-          d.coordinateSource === 'cache-xy' || d.coordinateSource === 'cache-flex-xy') {
-        return "#3F51B5"; // Blue for matches from Reference UMAP
-      }
-      if (d.coordinateSource === 'generated') {
-        return "#9C27B0"; // Purple for generated positions
-      }
-      return "#3F51B5";
-    }
-    return "#999";
-  };
+  const getPointColor = getStandardPointColor;
   
   // Function to get radius for point
-  const getPointRadius = d => {
-    if (d.isUserSequence) return 8;
-    if (d.matchesUserSequence) {
-      if (d.coordinateSource === 'cache' || d.coordinateSource === 'cache-flex' || 
-          d.coordinateSource === 'cache-xy' || d.coordinateSource === 'cache-flex-xy') {
-        return 6; // Larger for matches from Reference UMAP
-      }
-      return 4; // Smaller for generated positions
-    }
-    return 4;
-  };
+  const getPointRadius = getStandardPointRadius;
 
   // Create links between user sequences and their similar sequences
   const links = [];
@@ -2662,6 +2658,10 @@ function createEmergencyVisualization(container, data) {
         
         if (d.metadata.host) {
           html += `<div><strong>Host:</strong> ${d.metadata.host}</div>`;
+        }
+        
+        if (d.metadata.organism) {
+          html += `<div><strong>Organism:</strong> ${d.metadata.organism}</div>`;
         }
       }
       
@@ -2889,6 +2889,62 @@ function createEmergencyVisualization(container, data) {
   // Add the SVG to the container
   container.appendChild(svg.node());
   
+  // Create info container below the chart with improved height and styling
+  const infoContainer = document.createElement('div');
+  infoContainer.className = 'umap-info-container';
+  infoContainer.style.cssText = `
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-top: 15px;
+    padding: 12px;
+    background: #f9f9f9;
+    border-radius: 4px;
+    font-size: 13px;
+    min-height: 120px; /* Ensure enough height for content */
+    max-height: 200px; /* Limit maximum height */
+    overflow-y: auto; /* Add scrolling if needed */
+    border: 1px solid #e0e0e0;
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    box-sizing: border-box;
+  `;
+  
+  // Create diagnostic info with improved styling
+  const diagnosticInfo = document.createElement('div');
+  diagnosticInfo.className = 'sequence-stats';
+  diagnosticInfo.style.cssText = `
+    flex: 1;
+    margin-right: 15px;
+    padding-right: 15px;
+    border-right: 1px solid #e0e0e0;
+  `;
+  diagnosticInfo.innerHTML = `
+    <div style="font-weight: bold; margin-bottom: 8px; font-size: 14px;">Sequence Stats</div>
+    <div style="margin-bottom: 5px;">Total sequences: <strong>${data.length}</strong></div>
+    <div style="margin-bottom: 5px;">User sequences: <strong>${userSeqCount}</strong></div>
+    <div style="margin-bottom: 5px;">Similar sequences: <strong>${similarSeqCount}</strong></div>
+  `;
+  
+  // Create legend with improved styling
+  const infoLegend = createLegend(null, [
+    { color: '#FF5722', label: 'User Sequence' },
+    { color: '#3F51B5', label: 'Reference UMAP Match' },
+    { color: '#9C27B0', label: 'Generated Position' }
+  ]);
+  infoLegend.style.cssText = `
+    flex: 1;
+    padding-left: 5px;
+  `;
+  
+  // Add the info sections to the container
+  infoContainer.appendChild(diagnosticInfo);
+  infoContainer.appendChild(infoLegend);
+  
+  // Add the info container to the main container
+  container.appendChild(infoContainer);
+  
   // Update the details panel with first user sequence data
   const userSequence = data.find(d => d.isUserSequence);
   if (userSequence) {
@@ -2909,30 +2965,14 @@ function createEmergencyVisualization(container, data) {
       const point = g.select(`circle[data-id="${id}"]`);
       
       if (!point.empty()) {
-        if (highlight) {
-          point.attr("r", getPointRadius(point.datum()) + 2)
-            .style("stroke", "#FF5722")
-            .style("stroke-width", "2px")
-            .style("fill-opacity", 1);
-            
-          // Highlight connections
-          d3.selectAll(`line[data-source="${id}"], line[data-target="${id}"]`)
-            .style("stroke", "#FF5722")
-            .style("stroke-width", "2px")
-            .style("opacity", "0.8");
-        } else {
-          const d = point.datum();
-          point.attr("r", getPointRadius(d))
-            .style("stroke", "none")
-            .style("stroke-width", "0px")
-            .style("fill-opacity", 0.7);
-            
-          // Reset connections
-          d3.selectAll(`line[data-source="${id}"], line[data-target="${id}"]`)
-            .style("stroke", "#999")
-            .style("stroke-width", "1px")
-            .style("opacity", "0.4");
-        }
+        // Use the new utility function instead of manual styling
+        setPointHighlight(point, highlight);
+        
+        // Highlight connections
+        d3.selectAll(`line[data-source="${id}"], line[data-target="${id}"]`)
+          .style("stroke", highlight ? "#FF5722" : "#999")
+          .style("stroke-width", highlight ? "2px" : "1px")
+          .style("opacity", highlight ? "0.8" : "0.4");
       }
     },
     updateScatterPlot: function(newData) {
@@ -2949,66 +2989,8 @@ function createEmergencyVisualization(container, data) {
  * @param {string} type - The message type ('success', 'error', 'info', 'warning')
  */
 function showNotification(message, type = 'info') {
-  console.log(`Notification (${type}): ${message}`);
-  
-  // Create notification element if it doesn't exist
-  let notification = document.getElementById('notification-container');
-  if (!notification) {
-    notification = document.createElement('div');
-    notification.id = 'notification-container';
-    notification.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      z-index: 1000;
-      max-width: 300px;
-      font-family: sans-serif;
-      font-size: 14px;
-      border-radius: 4px;
-      padding: 12px 16px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-      animation: fadeIn 0.3s ease;
-    `;
-    document.body.appendChild(notification);
-    
-    // Add animation style
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      @keyframes fadeOut {
-        from { opacity: 1; transform: translateY(0); }
-        to { opacity: 0; transform: translateY(20px); }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-  
-  // Set type-specific styles
-  let bgColor = '#2196F3'; // info (blue)
-  if (type === 'success') bgColor = '#4CAF50'; // green
-  else if (type === 'error') bgColor = '#F44336'; // red
-  else if (type === 'warning') bgColor = '#FF9800'; // orange
-  
-  notification.style.background = bgColor;
-  notification.style.color = '#fff';
-  
-  // Set message
-  notification.textContent = message;
-  
-  // Show notification
-  notification.style.display = 'block';
-  
-  // Hide after 5 seconds
-  clearTimeout(notification.fadeOutTimer);
-  notification.fadeOutTimer = setTimeout(() => {
-    notification.style.animation = 'fadeOut 0.3s ease';
-    notification.fadeOutTimer = setTimeout(() => {
-      notification.style.display = 'none';
-    }, 300);
-  }, 5000);
+  // Reuse our existing message system
+  showMessage(message, type, 5000);
 }
 
 // Add a function to directly search for accession numbers from the similar sequences
@@ -3018,68 +3000,72 @@ async function findExactMatchesInCache(accessionNumbers) {
     return [];
   }
   
-  console.log(`🔍 FIND: Searching for ${accessionNumbers.length} accession numbers in cache of ${umapDataCache.length} items`);
+  if (!accessionNumbers || !Array.isArray(accessionNumbers) || accessionNumbers.length === 0) {
+    console.error("❌ FIND: Invalid or empty accession numbers array");
+    return [];
+  }
   
-  // Get a case-insensitive map of all accessions in the cache for faster lookup
-  const accessionMap = new Map();
-  umapDataCache.forEach(item => {
-    if (item.accession) {
+  console.log(`🔍 FIND: Searching for ${accessionNumbers.length} accession numbers in cache of ${umapDataCache.length} items`);
+  console.log("🔍 FIND: Accession numbers to search for:", accessionNumbers);
+  
+  // Build a fast lookup cache map if not already built
+  if (!window.umapAccessionMap || window.umapAccessionMap.size === 0) {
+    console.log("🔍 FIND: Building accession lookup map for faster searches");
+    window.umapAccessionMap = new Map();
+    
+    let mapsStats = {
+      totalProcessed: 0,
+      withAccession: 0,
+      withoutAccession: 0,
+      addedToMap: 0,
+      addedBaseNames: 0,
+      addedWithoutPrefix: 0
+    };
+    
+    umapDataCache.forEach(item => {
+      mapsStats.totalProcessed++;
+      
+      if (!item || !item.accession) {
+        mapsStats.withoutAccession++;
+        return;
+      }
+      
+      mapsStats.withAccession++;
+      const accession = item.accession;
+      
       // Store with lowercase key for case-insensitive lookup
-      accessionMap.set(item.accession.toLowerCase(), item);
+      window.umapAccessionMap.set(accession.toLowerCase(), item);
+      mapsStats.addedToMap++;
       
       // Also store without version number
-      const baseName = item.accession.split('.')[0].toLowerCase();
-      if (!accessionMap.has(baseName)) {
-        accessionMap.set(baseName, item);
+      const baseName = accession.split('.')[0].toLowerCase();
+      if (!window.umapAccessionMap.has(baseName)) {
+        window.umapAccessionMap.set(baseName, item);
+        mapsStats.addedBaseNames++;
       }
       
       // For NZ_ prefixed accessions, also store without the prefix
-      if (item.accession.startsWith('NZ_')) {
-        const withoutPrefix = item.accession.substring(3).toLowerCase();
-        if (!accessionMap.has(withoutPrefix)) {
-          accessionMap.set(withoutPrefix, item);
+      if (accession.startsWith('NZ_')) {
+        const withoutPrefix = accession.substring(3).toLowerCase();
+        if (!window.umapAccessionMap.has(withoutPrefix)) {
+          window.umapAccessionMap.set(withoutPrefix, item);
+          mapsStats.addedWithoutPrefix++;
         }
       }
-    }
-  });
-  
-  console.log(`🔍 FIND: Built accession map with ${accessionMap.size} entries`);
-  
-  // Find the specific accession NZ_QTIX00000000 that was mentioned
-  const specificAcc = "NZ_QTIX00000000";
-  const specificLower = specificAcc.toLowerCase();
-  const foundSpecific = accessionMap.has(specificLower);
-  
-  console.log(`🔍 FIND: Specific check for "${specificAcc}": ${foundSpecific ? 'FOUND' : 'NOT FOUND'}`);
-  if (foundSpecific) {
-    const item = accessionMap.get(specificLower);
-    console.log(`🔍 FIND: Found item:`, {
-      accession: item.accession,
-      x: item.x, 
-      y: item.y,
-      id: item.id
     });
-  } else {
-    // Try variations
-    const variations = [
-      specificAcc,
-      specificAcc.toLowerCase(),
-      specificAcc.substring(3), // without NZ_
-      specificAcc.substring(3).toLowerCase(),
-      // Try with wildcards
-      ...umapDataCache
-        .filter(item => item.accession && 
-               (item.accession.includes("QTIX") || 
-                (item.accession.toLowerCase().includes("qtix"))))
-        .map(item => item.accession)
-    ];
     
-    console.log(`🔍 FIND: Trying ${variations.length} variations of "${specificAcc}":`);
-    variations.forEach(v => console.log(`  - "${v}"`));
+    console.log(`🔍 FIND: Built accession map with ${window.umapAccessionMap.size} entries`);
+    console.log("🔍 FIND: Map building statistics:", mapsStats);
+    
+    // Output sample of keys in the map for debugging
+    const mapKeys = Array.from(window.umapAccessionMap.keys()).slice(0, 10);
+    console.log("🔍 FIND: Sample of keys in the accession map:", mapKeys);
   }
   
-  // Check each query accession
+  // Find items matching the accession numbers
   const foundItems = [];
+  const notFoundAccessions = [];
+  const searchDetails = [];
   
   for (const acc of accessionNumbers) {
     if (!acc) continue;
@@ -3089,22 +3075,30 @@ async function findExactMatchesInCache(accessionNumbers) {
     const accBase = acc.split('.')[0].toLowerCase();
     const accWithoutPrefix = acc.startsWith('NZ_') ? acc.substring(3).toLowerCase() : null;
     
+    const searchDetail = {
+      original: acc,
+      lowercase: accLower,
+      basename: accBase,
+      withoutPrefix: accWithoutPrefix,
+      result: "not found"
+    };
+    
     let match = null;
     
     // Try exact match (case-insensitive)
-    if (accessionMap.has(accLower)) {
-      match = accessionMap.get(accLower);
-      console.log(`🔍 FIND: Found exact match for "${acc}": ${match.accession}`);
+    if (window.umapAccessionMap.has(accLower)) {
+      match = window.umapAccessionMap.get(accLower);
+      searchDetail.result = "exact match";
     } 
     // Try base name match (without version)
-    else if (accessionMap.has(accBase)) {
-      match = accessionMap.get(accBase);
-      console.log(`🔍 FIND: Found base match for "${acc}": ${match.accession}`);
+    else if (window.umapAccessionMap.has(accBase)) {
+      match = window.umapAccessionMap.get(accBase);
+      searchDetail.result = "base name match";
     }
     // Try without prefix
-    else if (accWithoutPrefix && accessionMap.has(accWithoutPrefix)) {
-      match = accessionMap.get(accWithoutPrefix);
-      console.log(`🔍 FIND: Found match without prefix for "${acc}": ${match.accession}`);
+    else if (accWithoutPrefix && window.umapAccessionMap.has(accWithoutPrefix)) {
+      match = window.umapAccessionMap.get(accWithoutPrefix);
+      searchDetail.result = "without prefix match";
     }
     
     if (match) {
@@ -3115,11 +3109,474 @@ async function findExactMatchesInCache(accessionNumbers) {
         y: match.y,
         id: match.id
       });
+      searchDetail.foundMatch = match.accession;
     } else {
-      console.log(`🔍 FIND: No match found for "${acc}"`);
+      notFoundAccessions.push(acc);
+      
+      // Try a manual search for debugging
+      const allItems = umapDataCache.filter(item => 
+        item.accession && (
+          item.accession.toLowerCase() === accLower ||
+          item.accession.toLowerCase().includes(accBase) ||
+          (accWithoutPrefix && item.accession.toLowerCase().includes(accWithoutPrefix))
+        )
+      );
+      
+      if (allItems.length > 0) {
+        searchDetail.manualMatches = allItems.slice(0, 3).map(i => i.accession);
+        searchDetail.result = "Found manually but missed in map lookup";
+        console.log(`🔍 FIND: Manual search found ${allItems.length} matches for "${acc}" but map lookup failed`);
+      }
     }
+    
+    searchDetails.push(searchDetail);
   }
   
   console.log(`🔍 FIND: Found ${foundItems.length} matches out of ${accessionNumbers.length} accessions`);
+  console.log("🔍 FIND: Detailed search results:", searchDetails);
+  
+  if (notFoundAccessions.length > 0 && notFoundAccessions.length <= 5) {
+    console.log(`🔍 FIND: Could not find matches for: ${notFoundAccessions.join(', ')}`);
+  } else if (notFoundAccessions.length > 5) {
+    console.log(`🔍 FIND: Could not find matches for ${notFoundAccessions.length} accessions`);
+  }
+  
   return foundItems;
+}
+
+/**
+ * Create a standardized legend for visualizations
+ * @param {HTMLElement} container - Container to append the legend to
+ * @param {Array} items - Array of legend items with label and color properties
+ * @param {string} title - Optional legend title
+ * @returns {HTMLElement} - The created legend element
+ */
+function createLegend(container, items, title = 'Legend') {
+  // Create legend container
+  const legend = document.createElement('div');
+  legend.className = 'sequence-legend';
+  
+  // Start with the title
+  let legendHtml = `<div style="font-weight: bold; margin-bottom: 8px; font-size: 14px;">${title}</div>`;
+  
+  // Add each item
+  items.forEach(item => {
+    legendHtml += `
+      <div style="display: flex; align-items: center; margin: 5px 0;">
+        <span style="display: inline-block; width: 14px; height: 14px; background: ${item.color}; border-radius: 50%; margin-right: 8px;"></span>
+        <span style="line-height: 1.4;">${item.label}</span>
+      </div>
+    `;
+  });
+  
+  // Set the HTML content
+  legend.innerHTML = legendHtml;
+  
+  // Add to container if provided
+  if (container) {
+    container.appendChild(legend);
+  }
+  
+  return legend;
+}
+
+/**
+ * Get standard color for different point types
+ * @param {Object} point - Data point with type information
+ * @returns {string} - Color code
+ */
+function getStandardPointColor(point) {
+  if (!point) return '#999'; // Default gray
+  
+  if (point.isUserSequence) {
+    return '#FF5722'; // User sequence - orange
+  } else if (point.matchesUserSequence) {
+    // Check for coordinate source to distinguish between reference and generated
+    if (point.coordinateSource === 'cache' || point.coordinateSource === 'api') {
+      return '#3F51B5'; // Reference UMAP match - blue
+    } else {
+      return '#9C27B0'; // Generated position - purple
+    }
+  } else if (point.isHighlighted) {
+    return '#FFC107'; // Highlighted point - amber
+  }
+  
+  // Default color based on country if available
+  if (point.country) {
+    // Simple hash function to get consistent colors by country
+    const hash = point.country.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    // Use a subset of D3 category colors
+    const colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'];
+    return colors[hash % colors.length];
+  }
+  
+  return '#999'; // Default gray
+}
+
+/**
+ * Get standard radius for different point types
+ * @param {Object} point - Data point with type information
+ * @returns {number} - Radius in pixels
+ */
+function getStandardPointRadius(point) {
+  if (!point) return 4; // Default size
+  
+  if (point.isUserSequence) {
+    return 7; // User sequence - larger
+  } else if (point.matchesUserSequence) {
+    // Size based on similarity if available
+    if (point.similarity !== undefined) {
+      // Scale from 4 to 6 based on similarity (0.0 to 1.0)
+      return 4 + (point.similarity * 2);
+    }
+    return 5; // Default for similar sequences
+  } else if (point.isHighlighted) {
+    return 6; // Highlighted point
+  }
+  
+  return 4; // Default size
+}
+
+/**
+ * Highlight or unhighlight a point in the visualization
+ * @param {Object} point - D3 selection for the point
+ * @param {boolean} highlight - Whether to highlight or unhighlight
+ * @param {string} color - Color to use for highlighting (default #FF5722)
+ */
+function setPointHighlight(point, highlight, color = '#FF5722') {
+  if (!point || point.empty()) return;
+  
+  const d = point.datum();
+  
+  if (highlight) {
+    // Store original values if not already stored
+    if (!d._originalRadius) {
+      d._originalRadius = getStandardPointRadius(d);
+      d._originalOpacity = point.style('fill-opacity') || 0.7;
+    }
+    
+    point.attr("r", d._originalRadius + 2)
+      .style("stroke", color)
+      .style("stroke-width", "2px")
+      .style("fill-opacity", 1);
+  } else {
+    // Restore original values or use defaults
+    point.attr("r", d._originalRadius || getStandardPointRadius(d))
+      .style("stroke", "none")
+      .style("stroke-width", "0px")
+      .style("fill-opacity", d._originalOpacity || 0.7);
+    
+    // Clean up stored values
+    delete d._originalRadius;
+    delete d._originalOpacity;
+  }
+}
+
+// Add global CSS to improve visualization containers
+document.head.insertAdjacentHTML('beforeend', `
+  <style>
+    /* Ensure containers size properly for info panels */
+    #user-scatter-container {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    #user-scatter-container svg {
+      flex: 1;
+      min-height: 400px;
+    }
+    
+    .umap-info-container {
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Make sequence legend stand out better */
+    .sequence-legend {
+      background-color: rgba(255, 255, 255, 0.7);
+      padding: 8px;
+      border-radius: 4px;
+    }
+  </style>
+`);
+
+/**
+ * Improved version of findExactMatchesInCache that uses direct comprehensive search
+ * instead of relying on the map lookup which might be missing some matches
+ * @param {Array<string>} accessionNumbers - Array of accession numbers to search for
+ * @returns {Array<Object>} - Array of objects with coordinates for the matched sequences
+ */
+async function findAllMatchesInCache(accessionNumbers) {
+  console.log(`🔧 IMPROVED SEARCH: Searching for ${accessionNumbers.length} sequences using direct search`);
+  
+  if (!umapDataCache || !accessionNumbers) {
+    console.error("❌ IMPROVED SEARCH: Cache or accession numbers are invalid");
+    return [];
+  }
+  
+  const foundItems = [];
+  const searchFailures = [];
+  
+  // Process each accession number
+  for (const accession of accessionNumbers) {
+    if (!accession) continue;
+    
+    const origAccession = accession;
+    const accLower = accession.toLowerCase();
+    const accBase = accession.split('.')[0].toLowerCase();
+    const accWithoutPrefix = accession.startsWith('NZ_') ? accession.substring(3).toLowerCase() : null;
+    
+    // Try all possible matching strategies
+    let found = false;
+    
+    // 1. Direct match (exact)
+    let matches = umapDataCache.filter(item => 
+      item.accession && item.accession === origAccession
+    );
+    
+    // 2. Case-insensitive match
+    if (matches.length === 0) {
+      matches = umapDataCache.filter(item => 
+        item.accession && item.accession.toLowerCase() === accLower
+      );
+    }
+    
+    // 3. Base name match (without version)
+    if (matches.length === 0) {
+      matches = umapDataCache.filter(item => 
+        item.accession && item.accession.split('.')[0].toLowerCase() === accBase
+      );
+    }
+    
+    // 4. Without NZ_ prefix match
+    if (matches.length === 0 && accWithoutPrefix) {
+      matches = umapDataCache.filter(item => 
+        item.accession && 
+        (item.accession.toLowerCase() === accWithoutPrefix || 
+        item.accession.split('.')[0].toLowerCase() === accWithoutPrefix)
+      );
+    }
+    
+    // 5. Includes match (more permissive)
+    if (matches.length === 0) {
+      matches = umapDataCache.filter(item => 
+        item.accession && 
+        (item.accession.toLowerCase().includes(accBase) || 
+         (accWithoutPrefix && item.accession.toLowerCase().includes(accWithoutPrefix)))
+      );
+    }
+    
+    // If we found any matches, add the first one to our results
+    if (matches.length > 0) {
+      found = true;
+      const matchItem = matches[0]; // Take the first match
+      
+      foundItems.push({
+        query: origAccession,
+        match: matchItem.accession,
+        x: matchItem.x,
+        y: matchItem.y,
+        id: matchItem.id,
+        searchMethod: matches.length > 1 ? `direct (${matches.length} matches found)` : 'direct'
+      });
+      
+      console.log(`✅ IMPROVED SEARCH: Found ${matches.length} matches for "${origAccession}", using: ${matchItem.accession}`);
+    } else {
+      searchFailures.push(origAccession);
+      console.log(`❌ IMPROVED SEARCH: No matches found for "${origAccession}" after trying all methods`);
+    }
+  }
+  
+  console.log(`🔧 IMPROVED SEARCH: Found ${foundItems.length} out of ${accessionNumbers.length} sequences`);
+  if (searchFailures.length > 0) {
+    console.log(`❌ IMPROVED SEARCH: Could not find matches for: ${searchFailures.join(', ')}`);
+  }
+  
+  return foundItems;
+}
+
+// Add the new function to window for testing in the console
+window.findAllMatchesInCache = findAllMatchesInCache;
+
+// Add a debug utility accessible in the console
+window.debugUmapCache = function() {
+  console.log('🔧 DEBUGGER: Manual cache inspection initiated');
+  
+  // Check both caching mechanisms
+  console.log('🔧 DEBUGGER: Checking window.apiCache:');
+  if (window.apiCache) {
+    const status = window.apiCache.getCacheStatus();
+    console.log(`  - Status: ${JSON.stringify(status)}`);
+    
+    const sequences = window.apiCache.getSequences();
+    console.log(`  - Sequences available: ${sequences ? 'Yes' : 'No'}`);
+    console.log(`  - Sequence count: ${sequences ? sequences.length : 0}`);
+    
+    if (sequences && sequences.length > 0) {
+      console.log('  - First sequence sample:');
+      console.log(sequences[0]);
+      
+      // Check if the sequences have coordinates
+      const withCoordinates = sequences.filter(s => s.coordinates && Array.isArray(s.coordinates) && s.coordinates.length >= 2);
+      console.log(`  - Sequences with coordinates: ${withCoordinates.length} (${((withCoordinates.length/sequences.length)*100).toFixed(1)}%)`);
+      
+      if (withCoordinates.length > 0) {
+        console.log('  - Sample sequence with coordinates:');
+        console.log(withCoordinates[0]);
+      }
+    }
+  } else {
+    console.log('  - window.apiCache is not available');
+  }
+  
+  console.log('🔧 DEBUGGER: Checking umapDataCache:');
+  if (umapDataCache) {
+    console.log(`  - Cache exists: Yes`);
+    console.log(`  - Cache size: ${umapDataCache.length}`);
+    
+    if (umapDataCache.length > 0) {
+      console.log('  - First cache item:');
+      console.log(umapDataCache[0]);
+    }
+  } else {
+    console.log('  - umapDataCache is not initialized');
+  }
+  
+  console.log('🔧 DEBUGGER: Attempting to force cache reload');
+  getUmapDataCache().then(cache => {
+    console.log(`  - Force reload result: ${cache.length} items`);
+  }).catch(err => {
+    console.error('  - Force reload failed:', err);
+  });
+  
+  return 'Debug inspection complete. Check console for detailed output.';
+};
+
+// Listen for the cache-ready event from api-similarity-service.js
+window.addEventListener('api-cache-ready', function(event) {
+  console.log(`🌟 API cache is now ready with ${event.detail.count} sequences`);
+  
+  // If the dashboard has already loaded and we don't have data yet, refresh the cache
+  if (window.dashboardLoaded && (!umapDataCache || umapDataCache.length === 0)) {
+    console.log('🔄 Dashboard already loaded, refreshing UMAP data cache');
+    getUmapDataCache().then(cache => {
+      console.log(`✅ UMAP data cache refreshed with ${cache.length} items`);
+      
+      // Show debug stats after the cache is properly loaded
+      if (cache.length > 0) {
+        showCacheDebugStats();
+      }
+      
+      // If we already have initialized visualizations, update them
+      if (window.currentSequences && window.currentSequences.length > 0) {
+        console.log('🔄 Updating visualizations with refreshed cache data');
+        updateUmapVisualization(window.currentSequences);
+      }
+    });
+  }
+});
+
+// Set a flag when the dashboard is considered loaded
+window.addEventListener('DOMContentLoaded', function() {
+  window.dashboardLoaded = true;
+  console.log('📊 Dashboard DOM content loaded');
+});
+
+// Function to show cache debug stats at the right time
+function showCacheDebugStats() {
+  if (!umapDataCache || umapDataCache.length === 0) {
+    console.log('🔍 DEBUG: UMAP data cache is empty');
+    return;
+  }
+  
+  // Count entries with accession numbers
+  const entriesWithAccession = umapDataCache.filter(item => item && item.accession).length;
+  
+  console.log('🔍 DEBUG: UMAP data cache statistics:');
+  console.log(`  - Total entries in cache: ${umapDataCache.length}`);
+  console.log(`  - Entries with accession numbers: ${entriesWithAccession}`);
+  
+  // Log accession format distribution
+  const accessionFormats = {};
+  umapDataCache.forEach(item => {
+    if (item.accession) {
+      let format = 'other';
+      if (item.accession.startsWith('NZ_')) format = 'NZ_';
+      else if (item.accession.startsWith('NC_')) format = 'NC_';
+      else if (item.accession.startsWith('AL')) format = 'AL';
+      accessionFormats[format] = (accessionFormats[format] || 0) + 1;
+    }
+  });
+  
+  console.log(`  - Accession format distribution:`);
+  Object.entries(accessionFormats).forEach(([format, count]) => {
+    console.log(`    ${format}: ${count} items (${((count/entriesWithAccession)*100).toFixed(1)}%)`);
+  });
+}
+
+// Replace the old debug section with a function call that can be triggered at the right time
+function logUmapDataCacheStats() {
+  showCacheDebugStats();
+  
+  // Add a utility function for manual testing
+  console.log(`🔍 DEBUG: Added utility function 'findSequenceInCache()' to manually test accession numbers`);
+  console.log(`  Usage example: findSequenceInCache('NZ_QTIX00000000')`);
+  
+  // Make the function available on window
+  window.findSequenceInCache = function(accessionQuery) {
+    if (!umapDataCache || !accessionQuery) {
+      console.log("❌ Cannot search: umapDataCache is empty or no query provided");
+      return null;
+    }
+    
+    console.log(`🔍 Searching for: "${accessionQuery}"`);
+    
+    // Try direct match
+    const directMatch = umapDataCache.find(item => 
+      item.accession === accessionQuery
+    );
+    
+    if (directMatch) {
+      console.log(`✅ Found direct match: ${directMatch.accession}`);
+      return directMatch;
+    }
+    
+    // Try partial matches
+    console.log(`🔍 No direct match found, trying partial matches...`);
+    
+    const partialMatches = umapDataCache.filter(item => 
+      item.accession && 
+      (item.accession.includes(accessionQuery) || 
+       accessionQuery.includes(item.accession))
+    );
+    
+    if (partialMatches.length > 0) {
+      console.log(`✅ Found ${partialMatches.length} partial matches:`);
+      partialMatches.slice(0, 5).forEach((match, idx) => {
+        console.log(`  ${idx+1}. ${match.accession}`);
+      });
+      return partialMatches[0];
+    }
+    
+    // Try prefix matches (no NZ_ prefix)
+    console.log(`🔍 No partial matches found, trying prefix variations...`);
+    
+    const prefixMatches = umapDataCache.filter(item => 
+      item.accession && 
+      (
+        (item.accession.startsWith('NZ_') && item.accession.substring(3) === accessionQuery) ||
+        (accessionQuery.startsWith('NZ_') && accessionQuery.substring(3) === item.accession)
+      )
+    );
+    
+    if (prefixMatches.length > 0) {
+      console.log(`✅ Found ${prefixMatches.length} prefix variation matches:`);
+      prefixMatches.slice(0, 5).forEach((match, idx) => {
+        console.log(`  ${idx+1}. ${match.accession}`);
+      });
+      return prefixMatches[0];
+    }
+    
+    console.log(`❌ No matches found for "${accessionQuery}"`);
+    return null;
+  };
 }

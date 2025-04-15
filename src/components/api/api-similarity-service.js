@@ -13,6 +13,94 @@ let allSequencesCache = null;
 let isFetchingAll = false;
 let fetchAllPromise = null;
 
+// Add debugging info and window access at the top of the file
+// Make the sequence cache accessible via window for debugging
+(function() {
+  // Store a reference to the sequence cache for direct access
+  const cacheAccessor = {
+    getCache: function() {
+      // Return a reference to the actual cache variable
+      return allSequencesCache;
+    },
+    getCacheStatus: function() {
+      return {
+        isCached: !!allSequencesCache,
+        count: allSequencesCache ? allSequencesCache.length : 0,
+        isFetching: isFetchingAll
+      };
+    },
+    forceRefresh: async function() {
+      try {
+        const result = await fetchAllSequences(true);
+        return {
+          success: true,
+          count: result.length
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    }
+  };
+  
+  // Make it globally accessible for debugging
+  window.sequenceCacheDebug = cacheAccessor;
+  
+  // Also make it available on the window.apiCache object for dashboard integration
+  if (!window.apiCache) {
+    window.apiCache = {};
+  }
+  window.apiCache.getSequences = cacheAccessor.getCache;
+  window.apiCache.getCacheStatus = cacheAccessor.getCacheStatus;
+  window.apiCache.refreshCache = cacheAccessor.forceRefresh;
+  
+  // Original module code starts here
+})();
+
+// Start fetching sequences as soon as the module loads
+(function initializeCache() {
+  console.log('🚀 Initializing API cache from api-similarity-service.js');
+  // Start fetching in background without waiting
+  fetchAllSequences().then(data => {
+    console.log(`✅ API cache initialized with ${data.length} sequences`);
+    
+    // Make sure window.apiCache exists and is properly connected
+    if (!window.apiCache) {
+      window.apiCache = {};
+    }
+    
+    // Make sure our getters always return the latest data
+    if (!window.apiCache.getSequences) {
+      window.apiCache.getSequences = function() { 
+        return allSequencesCache;
+      };
+    }
+    
+    if (!window.apiCache.getCacheStatus) {
+      window.apiCache.getCacheStatus = function() {
+        return {
+          isCached: !!allSequencesCache,
+          count: allSequencesCache ? allSequencesCache.length : 0,
+          isFetching: isFetchingAll
+        };
+      };
+    }
+    
+    // Dispatch an event to notify other components that the cache is ready
+    const cacheReadyEvent = new CustomEvent('api-cache-ready', { 
+      detail: { count: data.length } 
+    });
+    window.dispatchEvent(cacheReadyEvent);
+    
+    // Also set a flag for components that don't use events
+    window.apiCacheReady = true;
+  }).catch(error => {
+    console.error('❌ Error initializing API cache:', error);
+  });
+})();
+
 /**
  * Fetch all sequences from the API and store them for similarity search
  * @param {boolean} forceRefresh - Whether to force a refresh of the cache

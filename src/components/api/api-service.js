@@ -9,9 +9,22 @@ import * as d3 from 'd3';
 const API_BASE_URL = 'http://54.169.186.71/api/v1'
 const API_KEY = 'test_key'
 
-// Cache for sequence data
+// Cache for sequences to avoid redundant API calls
 let cachedSequences = null;
 let sequenceCoordinatesCache = {}; // Cache for sequence coordinates by ID
+
+// Export the cache for direct access from dashboard
+window.apiCache = {
+  getSequences: function() {
+    return cachedSequences;
+  },
+  getCacheStatus: function() {
+    return {
+      isCached: !!cachedSequences,
+      count: cachedSequences ? cachedSequences.length : 0
+    };
+  }
+};
 
 /**
  * Configure API request with proper headers and parameters
