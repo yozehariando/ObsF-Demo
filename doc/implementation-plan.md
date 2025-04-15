@@ -237,7 +237,11 @@ The following refinements will be implemented to enhance existing functionality:
 ### User UMAP Refinements
 - Enable uploading multiple FASTA files (maintain upload button after completion)
 - Add Reset button to clear all uploaded FASTA files
-- Improve interaction: Clicking similar sequence on User UMAP will highlight the sequence on Reference Database UMAP
+- **Bi-directional Cross-UMAP Highlighting**: 
+  - When a sequence in the User Sequence UMAP panel is clicked, highlight the corresponding sequence in the Reference Database UMAP panel
+  - Remove auto-scrolling behavior in details panel
+  - Focus interactions between the two UMAP panels, not with the mutations details list
+  - Ensure clear visual feedback when sequences are highlighted across panels
 
 ### User Interface Refinements
 - Improve job tracker styling for better visibility
@@ -245,11 +249,94 @@ The following refinements will be implemented to enhance existing functionality:
 - Polish tooltip formatting and content
 - Enhance error messages with more specific guidance
 
+### Job Status & Progress Tracking Refinements
+- **Progress Bar Animation**: Fix animation with more reliable DOM updates and transitions
+  - Use direct DOM updates for critical progress bar state
+  - Ensure progress bar updates even if job tracker component changes
+  - Fix "width" styling issues that previously caused stalling
+- **Job Status Synchronization**: Enhance status updates between components
+  - Fix TypeError in `setupJobPolling` when accessing job tracker methods
+  - Add job status persistence between page refreshes using localStorage
+  - Implement retry mechanism for job status API failures
+  - Add graceful error recovery for orphaned jobs
+- **Multiple Job Handling**: Properly manage multiple concurrent jobs
+  - Add unique identifier tracking for each job
+  - Implement job queue system for handling multiple uploads
+  - Fix DOM element conflicts when multiple jobs run concurrently
+
 ### Performance Refinements
 - Optimize UMAP data loading with chunked responses
 - Implement memory management for large datasets
 - Add render optimization for scatter plots with many points
 - Optimize similarity calculations with spatial indexing
+
+### Similar Sequences UMAP Visualization Refinements
+- **Scientific Accuracy Improvements**: Ensure similar sequences are correctly positioned in UMAP space
+  - Match similar sequences to the UMAP data cache using **only accession numbers** from metadata
+  - Only display sequences with real, verified UMAP coordinates in the visualization
+  - Never generate artificial coordinates for similar sequences without real UMAP data
+  - Clearly distinguish between sequences with and without UMAP coordinates in the interface
+- **Cache Enhancement**: Improve sequence matching in the UMAP data cache
+  - Create an efficient lookup index for the UMAP data cache by accession number
+  - Implement a fast search algorithm to find exact accession matches
+  - Add clear visual documentation explaining that only sequences with real coordinates are shown
+  - Include coordinate source information in metadata tooltips
+- **Interface Improvements**: Better handle sequences without UMAP coordinates
+  - List sequences without UMAP coordinates in the Mutations Details panel only
+  - Provide clear visual indication of which sequences have UMAP coordinates
+  - Add filtering options to focus on sequences with available coordinates
+  - Ensure the user understands why some sequences aren't displayed on the UMAP
+
+### Refined Similar Sequences Workflow
+
+The correct workflow for handling similar sequences is as follows:
+
+1. **Upload sequence** (via `/pathtrack/sequence/embed` endpoint)
+   - User uploads FASTA file
+   - System returns job_id for tracking
+
+2. **Poll job status** (via `/pathtrack/jobs/{job_id}` endpoint)
+   - Check status every few seconds
+   - Continue until status is "completed"
+
+3. **Get UMAP projection for user sequence** (via `/pathtrack/sequence/umap` endpoint)
+   - Use job_id to fetch UMAP coordinates
+   - Place user sequence on UMAP visualization
+
+4. **Get similar sequences** (via `/pathtrack/sequence/similar` endpoint)
+   - Use original job_id to fetch similar sequences
+   - Similar sequences contain metadata with accession numbers, but no UMAP coordinates
+
+5. **Match similar sequences to UMAP coordinates**
+   - Use accession numbers from similar sequences to lookup coordinates in UMAP data cache
+   - UMAP data cache comes from the `/pathtrack/umap/all` endpoint
+   - Only show sequences on the UMAP visualization if coordinates are found
+   - List all similar sequences in the Details panel regardless of coordinate availability
+
+This workflow ensures scientific accuracy by only displaying sequences with real UMAP coordinates while still providing users with a complete list of similar sequences.
+
+### FASTA File Requirements
+
+User-uploaded FASTA files should conform to the following specifications:
+
+- Standard FASTA format with sequence header lines starting with ">"
+- Support for both nucleotide (DNA/RNA) and protein sequences
+- Recommended maximum file size: 5MB
+- Single or multiple sequences per file (multiple sequences will be processed as separate jobs)
+- Header line format: should contain identifier information that can be parsed
+- Example of a valid FASTA sequence:
+
+```fasta
+>NZ_QTIX00000000 Mycobacterium tuberculosis strain XDR1219, South Africa
+ATGCCGCGTGAGTGATGAAGGCTTTCGGGTCGTAAAACTCTGTTGTTAGGGAAGAACAAGTGCTAGTTGAATA
+AGCTGGCACCTTGACGGTACCTAACCAGAAAGCCACGGCTAACTACGTGCCAGCAGCCGCGGTAATACGTAGG
+TGGCAAGCGTTGTCCGGAATTATTGGGCGTAAAGCGCGCGCAGGCGGTTTCTTAAGTCTGATGTGAAAGCCCA
+CGGCTCAACCGTGGAGGGTCATTGGAAACTGGGGAACTTGAGTGCAGAAGAGGAAAGTGGAATTCCATGTGTA
+GCGGTGAAATGCGCAGAGATATGGAGGAACACCAGTGGCGAAGGCGACTTTCTGGTCTGTAACTGACGCTGAT
+GTGCGAAAGCGTGGGGATCAAACAGGGATT
+```
+
+These FASTA files are processed through our embedding pipeline to generate embeddings, which are then used for similarity search and UMAP projection.
 
 ### Code Quality Refinements
 - Improve modularization of long functions
@@ -260,12 +347,14 @@ The following refinements will be implemented to enhance existing functionality:
 ### Planned Timeline
 | Category | Refinements | Target Date |
 |----------|-------------|-------------|
-| User UMAP | Multiple file upload & Reset button | Week 1 |
-| User UMAP | Cross-UMAP highlighting | Week 2 |
-| Map | Zoom/Pan controls & Time-based visualization | Week 3 |
-| UI | Job tracker & animations | Week 4 |
-| UI | Tooltips & error messages | Week 5 |
-| Performance | Data loading & memory mgmt | Week 6 |
-| Performance | Rendering & calculations | Week 7 |
-| Code | Modularization & documentation | Week 8 |
-| Code | Refactoring & error handling | Week 9 | 
+| Similar Sequences | Accurate UMAP coordinate matching | Week 1 |
+| Similar Sequences | Enhanced cache with accession lookup | Week 1 |
+| User UMAP | Multiple file upload & Reset button | Week 2 |
+| User UMAP | Cross-UMAP highlighting | Week 3 |
+| Map | Zoom/Pan controls & Time-based visualization | Week 4 |
+| UI | Job tracker & animations | Week 5 |
+| UI | Tooltips & error messages | Week 6 |
+| Performance | Data loading & memory mgmt | Week 7 |
+| Performance | Rendering & calculations | Week 8 |
+| Code | Modularization & documentation | Week 9 |
+| Code | Refactoring & error handling | Week 10 | 

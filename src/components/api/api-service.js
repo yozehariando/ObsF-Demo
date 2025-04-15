@@ -11,6 +11,7 @@ const API_KEY = 'test_key'
 
 // Cache for sequence data
 let cachedSequences = null;
+let sequenceCoordinatesCache = {}; // Cache for sequence coordinates by ID
 
 /**
  * Configure API request with proper headers and parameters
@@ -475,15 +476,39 @@ async function getSimilarSequences(jobId, options = {}) {
     const similarSequences = Array.isArray(data.result) ? data.result : [];
     
     // Map the API response to our expected format
-    return similarSequences.map(seq => ({
-      sequence_hash: seq.id,
-      accession: seq.metadata?.accessions?.[0] || 'Unknown',
-      first_country: seq.metadata?.first_country || 'Unknown',
-      first_date: seq.metadata?.first_year ? `${seq.metadata.first_year}` : 'Unknown',
-      coordinates: [Math.random() * 10 - 5, Math.random() * 10 - 5], // Placeholder coordinates
-      similarity: seq.similarity || 0,
-      distance: seq.distance || 0
-    }));
+    return similarSequences.map(seq => {
+      // Generate deterministic coordinates based on the sequence ID hash
+      // This ensures the same sequence always gets the same coordinates
+      const hashCode = (str) => {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+          hash = ((hash << 5) - hash) + str.charCodeAt(i);
+          hash |= 0; // Convert to 32bit integer
+        }
+        return hash;
+      };
+      
+      // Generate deterministic coordinates based on the sequence ID
+      const hash = hashCode(seq.id);
+      const x = (hash % 1000) / 100 - 5; // Range from -5 to 5
+      const y = ((hash / 1000) % 1000) / 100 - 5; // Different range from -5 to 5
+      
+      // Always use deterministic coordinates without caching
+      const coordinates = [x, y];
+      console.log(`Generated deterministic coordinates for sequence ${seq.id}: [${coordinates[0]}, ${coordinates[1]}]`);
+      
+      return {
+        sequence_hash: seq.id,
+        id: seq.id,
+        accession: seq.metadata?.accessions?.[0] || 'Unknown',
+        first_country: seq.metadata?.first_country || 'Unknown',
+        first_date: seq.metadata?.first_year ? `${seq.metadata.first_year}` : 'Unknown',
+        coordinates: coordinates,
+        similarity: seq.similarity || 0,
+        distance: seq.distance || 0,
+        metadata: seq.metadata || {}
+      };
+    });
   } catch (error) {
     console.error("Error getting similar sequences:", error);
     // Return empty array instead of throwing to make the code more robust

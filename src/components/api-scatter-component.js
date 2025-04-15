@@ -25,6 +25,7 @@ function createUmapScatterPlot(containerId, data, options = {}) {
     colorScale: null, // Will be created based on countries
     onPointClick: null,
     transitionDuration: 500,
+    crossHighlight: null, // Function to highlight points in other visualizations
   }
 
   // Merge provided options with defaults
@@ -363,9 +364,73 @@ function createUmapScatterPlot(containerId, data, options = {}) {
     updateScatterPlot(data, options)
   }
 
+  // Add a function to highlight a point
+  function highlightPoint(pointId, highlight = true, highlightOptions = {}) {
+    console.log(`Attempting to highlight point in reference UMAP with ID: ${pointId}`);
+    
+    const points = g.selectAll('.scatter-point');
+    
+    // Find the point with the matching ID - try different ID formats
+    const matchingPoint = points.filter(d => {
+      // Check all possible ID fields
+      return (
+        d.id === pointId || 
+        d.accession === pointId || 
+        d.index === pointId ||
+        d.DNA_mutation_code === pointId
+      );
+    });
+    
+    if (!matchingPoint.empty()) {
+      console.log(`Found matching point with ID ${pointId} in reference UMAP:`, matchingPoint.datum());
+      
+      // Highlight the point
+      matchingPoint
+        .transition()
+        .duration(200)
+        .attr('r', highlight ? (highlightOptions.radius || 8) : 5)
+        .style('stroke', highlight ? (highlightOptions.strokeColor || '#000') : '#fff')
+        .style('stroke-width', highlight ? (highlightOptions.strokeWidth || 2) : 1)
+        .style('fill', highlight && highlightOptions.color ? highlightOptions.color : null);
+      
+      // If we have a cross-highlight function, call it
+      if (config.crossHighlight && typeof config.crossHighlight === 'function') {
+        config.crossHighlight(pointId, highlight);
+      }
+      
+      return true;
+    } else {
+      console.log(`No point found with ID ${pointId} in reference UMAP`);
+    }
+    
+    return false;
+  }
+  
+  // Function to clear all highlights
+  function clearHighlights() {
+    g.selectAll('.scatter-point')
+      .transition()
+      .duration(200)
+      .attr('r', 5)
+      .style('stroke', '#fff')
+      .style('stroke-width', 1)
+      .style('fill', d => {
+        const country = d.country || d.first_country || 'Unknown';
+        return country !== 'Unknown' ? config.colorScale(country) : '#999';
+      });
+  }
+  
+  // Set cross-highlight function
+  function setCrossHighlightFunction(fn) {
+    config.crossHighlight = fn;
+  }
+
   // Return the public API
   return {
     updateScatterPlot,
+    highlightPoint,
+    clearHighlights,
+    setCrossHighlightFunction,
     svg,
     g,
     xScale,

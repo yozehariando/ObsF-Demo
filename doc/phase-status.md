@@ -26,11 +26,16 @@ Current status as of: **May 15, 2023**
 
 | Refinement Area | Status | Target Date |
 |-----------------|--------|-------------|
+| Progress Bar Animation Fix | ✅ Completed | May 15, 2023 |
+| Job Tracker TypeError Fix | ✅ Completed | May 15, 2023 |
 | Multiple FASTA File Upload | In Progress | May 22, 2023 |
 | UMAP Reset Button | In Progress | May 22, 2023 |
-| Cross-UMAP Highlighting | Planned | May 29, 2023 |
+| Job Status Synchronization | In Progress | May 22, 2023 |
+| Multiple Job Queue System | In Progress | May 29, 2023 |
+| Cross-UMAP Highlighting | Planned | May 29, 2023 | Implementing bi-directional highlighting between User UMAP and Reference Database UMAP panels |
 | Map Zoom and Pan Controls | Planned | June 5, 2023 |
 | Time-based Sequence Visualization | Planned | June 12, 2023 |
+| Job Status Persistence (localStorage) | Planned | June 12, 2023 |
 | Job Tracker UI Improvements | Planned | June 19, 2023 |
 | Visualization Transitions | Planned | June 19, 2023 |
 | Tooltips & Error Messages | Planned | June 26, 2023 |
@@ -40,12 +45,23 @@ Current status as of: **May 15, 2023**
 | Code Modularization | Planned | July 17, 2023 |
 | Documentation | Planned | July 24, 2023 |
 | Refactoring & Error Handling | Planned | July 31, 2023 |
+| Similar Sequences Coordinate Matching | ⏳ In Progress | May 20, 2023 |
+| UMAP Cache Index by Accession | ⏳ In Progress | May 20, 2023 |
+| Coordinate Source Indicators | Planned | May 25, 2023 |
+| Separate Panel for Non-UMAP Sequences | Planned | May 25, 2023 |
 
 ## Known Issues Being Addressed
-- Progress bar animation sometimes stalls ⏳
-- Large datasets cause rendering lag 🔜
-- Similarity connections can be hard to see with many points 🔜
-- Job status updates can be delayed 🔜
+- ✅ Progress bar width styling issue fixed
+- ✅ TypeError in job tracker when status method is missing resolved
+- ⏳ Job status synchronization across components
+- ⏳ Handling multiple concurrent jobs
+- 🔜 Large datasets cause rendering lag
+- 🔜 Similarity connections can be hard to see with many points
+- 🔜 Job status persistence between page refreshes
+- ⏳ Similar sequences visualization uses potentially inaccurate coordinates
+- ⏳ Missing coordinate lookup for similar sequences by accession number
+- ⏳ Inconsistent highlighting behavior between UMAP panels
+- ⏳ Unwanted auto-scrolling in details panel when highlighting sequences
 
 ## Next Steps (Phase 3)
 - 🔜 Add advanced filtering and sorting options for similar sequences
