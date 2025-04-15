@@ -2194,12 +2194,30 @@ function updateDetailsWithSimilarSequences(userSequence, similarSequences) {
     // Ensure we have a proper label and sequence identifiers
     const sequenceLabel = seq.label || seq.accession || seq.id || 'Unknown sequence';
     
+    // Get metadata for display
+    const metadata = seq.metadata || {};
+    const country = metadata.country || metadata.first_country || 'Unknown';
+    const year = metadata.first_year || (metadata.years && metadata.years.length > 0 ? metadata.years[0] : 'Unknown');
+    const host = metadata.host || 'Unknown';
+    const distance = seq.distance !== undefined ? seq.distance.toFixed(3) : 'Unknown';
+    
     const seqItem = document.createElement('div');
     seqItem.className = `similar-sequence-item similarity-${similarityClass}`;
     seqItem.dataset.id = seq.id;
+    
+    // Create the basic content with similarity score
     seqItem.innerHTML = `
-      <div class="sequence-name">${sequenceLabel}</div>
-      <div class="similarity-score">${(similarity * 100).toFixed(1)}% similar</div>
+      <div class="sequence-content">
+        <div class="sequence-name">${sequenceLabel}</div>
+        <div class="sequence-metadata">
+          <div class="metadata-row"><strong>Similarity:</strong> ${(similarity * 100).toFixed(1)}%</div>
+          <div class="metadata-row"><strong>Distance:</strong> ${distance}</div>
+          <div class="metadata-row"><strong>Country:</strong> ${country}</div>
+          <div class="metadata-row"><strong>Year:</strong> ${year}</div>
+          <div class="metadata-row"><strong>Host:</strong> ${host}</div>
+        </div>
+      </div>
+      <div class="similarity-badge">${(similarity * 100).toFixed(0)}%</div>
     `;
     
     // Add click handler to highlight this sequence
@@ -3636,3 +3654,49 @@ function logUmapDataCacheStats() {
     return null;
   };
 }
+
+// Add compact styling for metadata to ensure it looks clean
+document.head.insertAdjacentHTML('beforeend', `
+  <style>
+    .sequence-content {
+      flex: 1;
+    }
+    .sequence-name {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .sequence-metadata {
+      font-size: 12px;
+      color: #555;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+    }
+    .metadata-row {
+      line-height: 1.3;
+    }
+    .similarity-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 40px;
+      height: 40px;
+      border-radius: 20px;
+      background-color: #3F51B5;
+      color: white;
+      font-weight: bold;
+      font-size: 14px;
+      margin-left: 10px;
+    }
+    .similarity-high .similarity-badge {
+      background-color: #4CAF50;
+    }
+    .similarity-medium .similarity-badge {
+      background-color: #FFC107;
+      color: #333;
+    }
+    .similarity-low .similarity-badge {
+      background-color: #F44336;
+    }
+  </style>
+`);
