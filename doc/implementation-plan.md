@@ -103,6 +103,7 @@ We'll create these component files to extend functionality without modifying exi
 - Enhanced user interface with animations and tooltips
 - Advanced filtering and analysis tools
 - Export and sharing functionality
+- Code refactoring and modularization
 
 **Implementation Details**:
 1. **Performance Optimization**:
@@ -120,6 +121,13 @@ We'll create these component files to extend functionality without modifying exi
    - Implement filtering and sorting options
    - Add statistical analysis features
    - Create export and sharing functionality
+
+4. **Code Refactoring and Modularization**: ⏳
+   - Break down dashboard.md into smaller, focused modules ⏳
+   - Introduce dashboard-new.md as the target for refactored code ✅
+   - Move functions to appropriate modules based on their functionality ⏳
+   - Implement proper ES6 import/export system ✅
+   - Ensure all functionality works in both original and new dashboard files
 
 ## Common Implementation Patterns
 
@@ -170,6 +178,61 @@ The implementation will be considered successful when:
 ## Future Development Items
 
 The following items from the original development plan are planned for future implementation:
+
+### Code Refactoring Strategy ⏳
+
+We are currently refactoring the large `dashboard.md` file into smaller, more maintainable modules. The refactoring approach follows this pattern:
+
+1. **Extract Core Functionality into Modules** ✅
+   - Break the monolithic dashboard.md into smaller, focused files ✅
+   - Leverage existing components where possible ✅
+   - Improve maintainability and readability ✅
+   - Create dashboard-new.md as the target for our refactored implementation ✅
+
+2. **Current Refactoring Status**
+   - **Completed Modules** ✅
+     - `utils/debug-utils.js` - Debugging utilities for UMAP data cache inspection
+     - `utils/dom-utils.js` - DOM manipulation helpers
+     - `data-processing/sequence-matcher.js` - Improved sequence matching functions
+     - `data-processing/cache-manager.js` - Enhanced UMAP data cache management with centralized state
+     - `data-processing/debug-integration.js` - Centralized debug utility registration
+     - `data-processing/coordinate-mapper.js` - Coordinate transformation utilities
+     - `visualization/point-styler.js` - Point styling and color functions
+     - `visualization/legend-builder.js` - Legend creation and management
+     - `visualization/umap-visualization.js` - Emergency visualization function
+     - `visualization/tooltip-formatter.js` - Enhanced tooltip formatting and display
+     - `ui-components/details-panel.js` - Details panel with similar sequences
+     - `ui-components/hover-effects.js` - Hover interaction effects
+     - `ui-components/highlight-manager.js` - Sequence highlighting functionality
+
+   - **In-Progress Integration** ⏳
+     - `dashboard-new.md` - Integrating all modules into a cohesive dashboard implementation
+
+3. **Integration with Existing Components** ⏳
+   - `api-user-scatter-component.js`: Integration complete for visualization ✅
+   - `api-service.js`: Cache integration completed for API calls ✅
+   - `data-service.js`: Integration in progress for data processing
+   - Working on connecting remaining event handlers and interactive features
+
+4. **Styling Improvements** 🔜
+   - Move inline styles to separate CSS files
+   - Create a consistent theme system
+   - Use CSS variables for better maintainability
+
+5. **Implementation Sequence**
+   - Extract core visualization functions ✅
+   - Move data processing functions ✅
+   - Extract UI components ✅
+   - Update dashboard-new.md to use new modules ⏳
+
+6. **Dashboard Transition Strategy**
+   - Keep dashboard.md functional throughout the refactoring process ✅
+   - Create dashboard-new.md as the target for refactored code ✅
+   - Import all extracted modules into dashboard-new.md ✅
+   - Complete cache management integration ✅
+   - Finalize event handler connections ⏳
+   - Ensure feature parity between both implementations ⏳
+   - Once fully tested, make dashboard-new.md the primary implementation 🔜
 
 ### User Interface Enhancements
 - Toggle between geographic and UMAP views in the map component
@@ -272,13 +335,13 @@ The following refinements will be implemented to enhance existing functionality:
 
 ### Similar Sequences UMAP Visualization Refinements
 - **Scientific Accuracy Improvements**: Ensure similar sequences are correctly positioned in UMAP space
-  - Match similar sequences to the UMAP data cache using **only accession numbers** from metadata
-  - Only display sequences with real, verified UMAP coordinates in the visualization
-  - Never generate artificial coordinates for similar sequences without real UMAP data
+  - Match similar sequences to the UMAP data cache using **only accession numbers** from metadata ✅
+  - Only display sequences with real, verified UMAP coordinates in the visualization ✅
+  - Never generate artificial coordinates for similar sequences without real UMAP data ✅
   - Clearly distinguish between sequences with and without UMAP coordinates in the interface
 - **Cache Enhancement**: Improve sequence matching in the UMAP data cache
-  - Create an efficient lookup index for the UMAP data cache by accession number
-  - Implement a fast search algorithm to find exact accession matches
+  - Create an efficient lookup index for the UMAP data cache by accession number ✅
+  - Implement a fast search algorithm to find exact accession matches ✅
   - Add clear visual documentation explaining that only sequences with real coordinates are shown
   - Include coordinate source information in metadata tooltips
 - **Interface Improvements**: Better handle sequences without UMAP coordinates
@@ -308,9 +371,9 @@ The correct workflow for handling similar sequences is as follows:
    - Similar sequences contain metadata with accession numbers, but no UMAP coordinates
 
 5. **Match similar sequences to UMAP coordinates**
-   - Use accession numbers from similar sequences to lookup coordinates in UMAP data cache
+   - Use accession numbers from similar sequences to lookup coordinates in UMAP data cache ✅
    - UMAP data cache comes from the `/pathtrack/umap/all` endpoint
-   - Only show sequences on the UMAP visualization if coordinates are found
+   - Only show sequences on the UMAP visualization if coordinates are found ✅
    - List all similar sequences in the Details panel regardless of coordinate availability
 
 This workflow ensures scientific accuracy by only displaying sequences with real UMAP coordinates while still providing users with a complete list of similar sequences.
@@ -339,22 +402,209 @@ GTGCGAAAGCGTGGGGATCAAACAGGGATT
 These FASTA files are processed through our embedding pipeline to generate embeddings, which are then used for similarity search and UMAP projection.
 
 ### Code Quality Refinements
-- Improve modularization of long functions
-- Add inline documentation for complex algorithms
-- Refactor duplicated code into shared utilities
-- Implement more robust error boundaries
+- Improve modularization of long functions ⏳
+- Add inline documentation for complex algorithms ✅
+- Refactor duplicated code into shared utilities ⏳
+- Implement more robust error boundaries ✅
+
+### Recent Code Quality Improvements
+- ✅ Created central error-handler.js utility module with robust error handling capabilities
+- ✅ Fixed module import error with dashboard-new.md by implementing missing dependencies
+- ✅ Standardized error reporting patterns across all components
+- ✅ Added user-friendly error notifications through the error-handler module
+- ✅ Implemented fallback mechanisms for critical component failures
+- ✅ Enhanced debugging capabilities with detailed error context information
+
+### Current Issues in dashboard-new.md
+- 🔍 Blank panels issue: Data is correctly loaded (7889 sequences) but not displayed in visualizations
+- 🔍 Analysis shows data flow differences between dashboard.md and dashboard-new.md:
+  - In dashboard.md: Direct DOM manipulation with D3.js for initial visualization (not cache-dependent)
+  - In dashboard-new.md: Trying to use cache for initial visualization instead of direct initialization
+- 🔍 The umapDataCache is properly initialized but not correctly passed to createUmapScatterPlot
+- 🔍 Debug utilities and fallback mechanisms have been added to dashboard-new.md without modifying dashboard.md
+- 🔍 Solution approach: Need to implement direct D3.js visualization on component initialization similar to dashboard.md
+
+### Dashboard-new.md Fix Plan (Priority Task)
+
+We've created a detailed plan to fix the visualization initialization issues in dashboard-new.md permanently:
+
+1. **Direct Initialization** ⏳
+   - Create visualizations with sample/empty data during initialization
+   - Don't wait for cache data to be ready before showing basic structure
+   - Initialize all three containers (map, scatter, user-scatter) with D3.js directly
+
+2. **Decoupled Cache Loading** ⏳
+   - Separate visualization initialization from cache loading
+   - Load cache in background without blocking visualization
+   - Update visualizations when cache is ready without requiring it for initial display
+
+3. **Enhanced Event Handling** ⏳
+   - Implement proper event listeners for cache-ready events
+   - Ensure event handlers update visualizations correctly
+   - Add robust error handling for visualization updates
+
+4. **Component References** ⏳
+   - Ensure component references are correctly maintained
+   - Store visualization references in the state object
+   - Update references when visualizations are created or updated
+
+5. **Fallback Mechanisms** ✅
+   - Show proper empty state for visualization containers
+   - Implement error handling for visualization failures
+   - Maintain manual initialization utilities for recovery
+
+This approach will follow the exact pattern from dashboard.md where visualizations are created directly using D3.js, instead of waiting for the cache to be ready. See `doc/plan.md` for the full detailed implementation plan.
 
 ### Planned Timeline
-| Category | Refinements | Target Date |
-|----------|-------------|-------------|
-| Similar Sequences | Accurate UMAP coordinate matching | Week 1 |
-| Similar Sequences | Enhanced cache with accession lookup | Week 1 |
-| User UMAP | Multiple file upload & Reset button | Week 2 |
-| User UMAP | Cross-UMAP highlighting | Week 3 |
-| Map | Zoom/Pan controls & Time-based visualization | Week 4 |
-| UI | Job tracker & animations | Week 5 |
-| UI | Tooltips & error messages | Week 6 |
-| Performance | Data loading & memory mgmt | Week 7 |
-| Performance | Rendering & calculations | Week 8 |
-| Code | Modularization & documentation | Week 9 |
-| Code | Refactoring & error handling | Week 10 | 
+| Category | Refinements | Target Date | Status |
+|----------|-------------|-------------|--------|
+| Similar Sequences | Accurate UMAP coordinate matching | Week 1 | ✅ Completed |
+| Similar Sequences | Enhanced cache with accession lookup | Week 1 | ✅ Completed |
+| Code | Extracting core modules | Week 1-2 | ⏳ In Progress |
+| Code | Creating dashboard-new.md | Week 2 | ✅ Completed |
+| User UMAP | Multiple file upload & Reset button | Week 2 | ⏳ In Progress |
+| User UMAP | Cross-UMAP highlighting | Week 3 | 🔜 Planned |
+| Map | Zoom/Pan controls & Time-based visualization | Week 4 | 🔜 Planned |
+| UI | Job tracker & animations | Week 5 | 🔜 Planned |
+| UI | Tooltips & error messages | Week 6 | 🔜 Planned |
+| Performance | Data loading & memory mgmt | Week 7 | 🔜 Planned |
+| Performance | Rendering & calculations | Week 8 | 🔜 Planned |
+| Code | Documentation & error handling | Week 9-10 | 🔜 Planned | 
+
+## Recent Refactoring Notes - Dashboard-new.md
+
+During the dashboard-new.md refactoring, several issues were identified and resolved:
+
+1. **Duplicate Function Declarations** ✅
+   - Identified and removed duplicate declaration of `createEmergencyVisualization` function that was causing a SyntaxError.
+   - The function was already properly imported from `visualization/umap-visualization.js` at the top of the file.
+   - Also removed duplicate declarations of `hasVisualizationContent` and `showEmptyVisualization` functions.
+
+2. **Integration Issues** ⏳
+   - The `updateVisualizationsWithUserSequence` function should be moved to `visualization/umap-visualization.js` module.
+   - Need to ensure proper event handling across modules.
+   - Need to ensure initialization order is correct.
+
+3. **Next Refactoring Steps** 🔜
+   - Complete moving `updateVisualizationsWithUserSequence` to the appropriate module
+   - Consolidate event handlers and ensure they're properly connected
+   - Verify all visualization modules are correctly integrated
+   - Implement complete error handling for all modules
+
+4. **Bug Notes from Original Implementation (dashboard.md)** 📝
+   - Found syntax error in dashboard.md related to incorrectly nested CSS outside JavaScript code.
+   - Fixed by removing duplicate CSS section and adding proper implementation of the `createEmergencyVisualization` function initialization.
+   - This fix doesn't affect the refactoring work but should be documented for future reference.
+   - Consider extracting the custom CSS into a separate stylesheet in a future refactoring iteration.
+
+## Identified Blank Page Issue in dashboard-new.md
+
+A critical issue has been identified in dashboard-new.md where the visualizations remain blank despite data loading correctly:
+
+1. **Issue Description**:
+   - The dashboard-new.md file successfully loads 7889 sequences from the cache
+   - The log shows the data is properly loaded and transformed
+   - However, the visualizations remain blank with no visible points
+   
+2. **Root Cause Analysis**:
+   - The initialization flow differs significantly from dashboard.md
+   - In dashboard.md, visualizations are directly created with D3.js during initialization
+   - In dashboard-new.md, we're trying to use component initialization functions but they appear to fail silently
+   - The critical difference is in the component creation approach:
+     - dashboard.md: Direct initialization (lines 1526-1531)
+     - dashboard-new.md: Attempt to use wrapper functions that might not be compatible
+
+3. **Component Method Mismatch**:
+   - In dashboard-new.md's `updateReferenceScatterPlot` and `updateUserScatterPlot` functions:
+     - We check for `updateScatterPlot` method but actual components might be using `updateData`
+     - Function checks for `createUmapScatterPlot` and `createUserScatterPlot` but the imported functions might use different signatures
+
+4. **Debugging Notes**:
+   - Cache loading works correctly (7889 items loaded)
+   - Transformation of data works correctly
+   - The initialization functions in dashboard-new.md are being called
+   - Data is available but not rendered in the visualizations
+   
+5. **Potential Fixes**:
+   - Directly use D3.js to render visualizations rather than relying on wrapped component functions
+   - Ensure correct component method calls (`updateData` vs `updateScatterPlot`)
+   - Add more robust logging to track actual rendering process
+   - Implement direct fallback to emergency visualization during initial load
+
+This issue demonstrates the importance of maintaining compatibility with the original component APIs during refactoring. It's recommended to fix this in dashboard-new.md without modifying the original dashboard.md implementation.
+
+### Critical Initialization Issues in dashboard-new.md
+
+1. **Component Initialization Sequence** 🔴
+   - The initialization sequence in dashboard-new.md differs significantly from dashboard.md
+   - In dashboard.md, visualizations are created immediately with empty data
+   - In dashboard-new.md, we're waiting for cache data before creating visualizations
+   - This causes the blank visualization issue
+
+2. **Component Method Mismatch** 🔴
+   - The visualization-initializer.js is checking for `updateScatterPlot` method
+   - The actual components use `updateData` method
+   - This mismatch causes silent failures in visualization updates
+
+3. **Event Handler Registration** 🔴
+   - Button event handlers are registered too late in the initialization sequence
+   - The debug panel buttons are not properly connected to the visualization components
+   - Event handlers are duplicated in multiple places, causing conflicts
+
+4. **Cache Dependency** 🔴
+   - dashboard-new.md is overly dependent on cache data for initialization
+   - Should initialize with empty data first, then update when cache is ready
+   - Current implementation blocks visualization creation until cache is loaded
+
+5. **Component Reference Management** 🔴
+   - Component references are not properly maintained in window.state
+   - References are lost between initialization and update phases
+   - This causes the "update" methods to fail silently
+
+6. **Debug Panel Integration** 🔴
+   - Debug panel buttons are not properly connected to the visualization components
+   - The force-init and direct-viz buttons don't have proper fallback mechanisms
+   - Debug status updates are not properly synchronized with visualization state
+
+### Proposed Fixes
+
+1. **Immediate Visualization Initialization** 🔜
+   - Initialize all visualizations with empty data immediately on DOMContentLoaded
+   - Don't wait for cache data to be ready
+   - Use the same initialization pattern as dashboard.md
+
+2. **Component Method Standardization** 🔜
+   - Standardize on `updateData` method for all visualization components
+   - Add proper method existence checks before calling update methods
+   - Implement fallbacks for different method names
+
+3. **Event Handler Consolidation** 🔜
+   - Move all event handlers to a single initialization point
+   - Ensure handlers are registered before any visualization updates
+   - Add proper error handling for event registration
+
+4. **Cache Loading Decoupling** 🔜
+   - Separate cache loading from visualization initialization
+   - Load cache in background without blocking visualization creation
+   - Update visualizations when cache is ready using proper event system
+
+5. **Component Reference Management** 🔜
+   - Implement proper component reference tracking
+   - Store references in window.state with proper initialization
+   - Add reference validation before method calls
+
+6. **Debug Panel Enhancement** 🔜
+   - Connect debug panel buttons directly to visualization components
+   - Add proper fallback mechanisms for each button
+   - Implement proper status updates for visualization state
+
+### Implementation Priority
+
+1. Fix immediate visualization initialization (highest priority)
+2. Standardize component methods
+3. Consolidate event handlers
+4. Decouple cache loading
+5. Improve component reference management
+6. Enhance debug panel integration
+
+These fixes should resolve the blank visualization issue and ensure the debug panel buttons work correctly. The fixes will be implemented in dashboard-new.md without modifying dashboard.md or its related files. 
