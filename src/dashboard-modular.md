@@ -3,6 +3,8 @@ theme: dashboard
 toc: false
 ---
 
+<link rel="stylesheet" href="./components/ui/styles/ui-components.css" id="ui-components-styles">
+
 # Modular DNA Mutation Dashboard - (Modular)
 
 This dashboard demonstrates a modular approach to visualizing DNA mutation data.
@@ -49,7 +51,7 @@ import {
   showErrorMessage,
   createMessage,
   createMessagesContainer,
-  addMessageStyles
+  // addMessageStyles
 } from './components/ui/message-handler.js';
 
 import {
@@ -57,7 +59,7 @@ import {
   hideLoadingIndicator,
   createLoadingIndicator,
   createCustomLoadingIndicator,
-  addLoadingStyles
+  // addLoadingStyles
 } from './components/ui/loading-indicator.js';
 
 import {
@@ -69,19 +71,20 @@ import {
   createJobProgressTracker,
   onStatusChange,
   getStatusHistory,
-  addStatusStyles
+  // addStatusStyles
 } from './components/ui/status-manager.js';
 
 // Initialize the UI component styles
-addMessageStyles();
-addLoadingStyles();
-addStatusStyles();
+// addMessageStyles();
+// addLoadingStyles();
+// addStatusStyles();
 
 import * as d3 from "d3";
 import { createMap } from "./components/visualizations/map-component.js";
 import { createApiMap } from "./components/visualizations/api-map-component.js";
 import { createUmapScatterPlot } from "./components/visualizations/scatter-plot.js";
-import { updateDetailsPanel, addContainerStyles } from "./components/ui/dom-utils.js";
+// import { updateDetailsPanel, addContainerStyles } from "./components/ui/dom-utils.js";
+import { updateDetailsPanel } from "./components/ui/dom-utils.js";
 import { setupEventHandlers } from "./components/event-handlers/interaction-handlers.js";
 import { createUserScatterPlot } from "./components/visualizations/user-scatter-plot.js";
 import { 
@@ -110,7 +113,6 @@ import {
   fetchAllSequences,
   findSimilarSequences
 } from './components/data/api-similarity-service.js';
-
 // Make FileAttachment available globally if it exists in this context
 // This helps our components detect if they're running in Observable
 if (typeof FileAttachment !== 'undefined') {
@@ -130,9 +132,7 @@ const state = {
   jobPollingIntervals: {},
   stopPollingFunctions: {},
   similarSequences: []
-};
-
-// Add a global cache for UMAP data
+};// Add a global cache for UMAP data
 let umapDataCache = null;
 
 /**
@@ -1207,7 +1207,7 @@ function initializeUserScatterPlot(container, data = [], options = {}) {
     console.log("Initializing dashboard...");
     
     // Add CSS styles for proper container sizing
-    addContainerStyles();
+    // addContainerStyles();
     
     // Add notices for data sources
     const apiDataNotice = document.createElement('div');
@@ -3452,3 +3452,5 @@ document.head.insertAdjacentHTML('beforeend', `
     }
   </style>
 `);
+
+

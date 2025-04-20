@@ -137,49 +137,16 @@ export function hideLoadingIndicator() {
   }
 }
 
-// Add required CSS if not already added
-export function addLoadingStyles() {
-  if (!document.getElementById('loading-indicator-styles')) {
-    const styleEl = document.createElement('style');
-    styleEl.id = 'loading-indicator-styles';
-    styleEl.textContent = `
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-      
-      .loading-indicator {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(255, 255, 255, 0.8);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-      }
-      
-      .loading-spinner {
-        width: 50px;
-        height: 50px;
-        border: 5px solid #f3f3f3;
-        border-top: 5px solid #3498db;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-bottom: 20px;
-      }
-      
-      .loading-message {
-        font-size: 18px;
-        color: #333;
-      }
-    `;
-    document.head.appendChild(styleEl);
-  }
-}
+// // Add required CSS if not already added
+// export function addLoadingStyles() {
+//   if (!document.getElementById('ui-components-styles')) {
+//     const linkEl = document.createElement('link');
+//     linkEl.id = 'ui-components-styles';
+//     linkEl.rel = 'stylesheet';
+//     linkEl.href = './components/ui/styles/ui-components.css';
+//     document.head.appendChild(linkEl);
+//   }
+// }
 
-// Initialize styles when module is imported
-addLoadingStyles();
+// // Initialize styles when module is imported
+// addLoadingStyles();

@@ -67,28 +67,14 @@ export function updateDetailsPanel(detailsPanelId, selectedPoint, colorScale) {
   `
 }
 
-// Function to add CSS styles for proper container sizing
-export function addContainerStyles() {
-  const style = document.createElement('style')
-  style.textContent = `
-    #map-container svg, #scatter-container svg {
-      display: block;
-      max-width: 100%;
-      max-height: 100%;
-    }
-    
-    .tooltip {
-      position: absolute;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 3px;
-      padding: 10px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s;
-      z-index: 1000;
-    }
-  `
-  document.head.appendChild(style)
-  return style
-}
+// // Function to add CSS styles for proper container sizing
+// export function addContainerStyles() {
+//   if (!document.getElementById('ui-components-styles')) {
+//     const linkEl = document.createElement('link');
+//     linkEl.id = 'ui-components-styles';
+//     linkEl.rel = 'stylesheet';
+//     linkEl.href = './components/ui/styles/ui-components.css';
+//     document.head.appendChild(linkEl);
+//   }
+//   return linkEl;
+// }

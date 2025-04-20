@@ -401,125 +401,19 @@ export function getStatusHistory() {
   return [...statusHistory];
 }
 
-// Add required CSS if not already added
-export function addStatusStyles() {
-  if (!document.getElementById('status-manager-styles')) {
-    const styleEl = document.createElement('style');
-    styleEl.id = 'status-manager-styles';
-    styleEl.textContent = `
-      .status-indicator {
-        padding: 5px 10px;
-        border-radius: 4px;
-        font-size: 14px;
-        display: inline-block;
-      }
-      
-      .status-error {
-        background-color: rgba(231, 76, 60, 0.2);
-        color: #c0392b;
-      }
-      
-      .status-loading {
-        background-color: rgba(52, 152, 219, 0.2);
-        color: #2980b9;
-      }
-      
-      .status-ready {
-        background-color: rgba(46, 204, 113, 0.2);
-        color: #27ae60;
-      }
-      
-      .status-initializing {
-        background-color: rgba(241, 196, 15, 0.2);
-        color: #f39c12;
-      }
-      
-      .job-status-container {
-        margin-bottom: 15px;
-      }
-      
-      .job-status {
-        padding: 3px 8px;
-        border-radius: 3px;
-        font-size: 12px;
-        font-weight: bold;
-        display: inline-block;
-        margin-bottom: 5px;
-      }
-      
-      .job-status-initializing {
-        background-color: #f39c12;
-        color: white;
-      }
-      
-      .job-status-queued {
-        background-color: #95a5a6;
-        color: white;
-      }
-      
-      .job-status-processing {
-        background-color: #3498db;
-        color: white;
-      }
-      
-      .job-status-completed {
-        background-color: #2ecc71;
-        color: white;
-      }
-      
-      .job-status-failed {
-        background-color: #e74c3c;
-        color: white;
-      }
-      
-      .job-progress-container {
-        background-color: #f3f3f3;
-        border-radius: 5px;
-        height: 10px;
-        width: 100%;
-        margin-bottom: 5px;
-      }
-      
-      .job-progress {
-        height: 10px;
-        background-color: #3498db;
-        width: 0%;
-        transition: width 0.3s ease;
-        border-radius: 5px;
-      }
-      
-      .job-tracker-container {
-        background-color: white;
-        border-radius: 5px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        padding: 15px;
-        margin-bottom: 20px;
-      }
-      
-      .job-tracker-status {
-        font-weight: bold;
-        margin-bottom: 10px;
-      }
-      
-      .job-tracker-progress-container {
-        background-color: #f3f3f3;
-        border-radius: 5px;
-        height: 10px;
-        width: 100%;
-        margin-bottom: 10px;
-      }
-      
-      .job-progress-text {
-        font-size: 14px;
-        color: #666;
-      }
-    `;
-    document.head.appendChild(styleEl);
-  }
-}
+// // Add required CSS by linking to the centralized CSS file
+// export function addStatusStyles() {
+//   if (!document.getElementById('ui-components-styles')) {
+//     const linkEl = document.createElement('link');
+//     linkEl.id = 'ui-components-styles';
+//     linkEl.rel = 'stylesheet';
+//     linkEl.href = './components/ui/styles/ui-components.css';
+//     document.head.appendChild(linkEl);
+//   }
+// }
 
-// Initialize styles when module is imported
-addStatusStyles();
+// // Initialize styles when module is imported
+// addStatusStyles();
 
 /**
  * Creates a message component

@@ -157,76 +157,16 @@ export function showErrorMessage(message, duration = 8000) {
   return showMessage(message, 'error', duration);
 }
 
-// Add required CSS if not already added
-export function addMessageStyles() {
-  if (!document.getElementById('message-handler-styles')) {
-    const styleEl = document.createElement('style');
-    styleEl.id = 'message-handler-styles';
-    styleEl.textContent = `
-      .messages-container {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        max-width: 400px;
-        z-index: 9998;
-      }
-      
-      .message {
-        background-color: white;
-        border-radius: 4px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 15px;
-        transform: translateX(120%);
-        transition: transform 0.3s ease-out, opacity 0.3s ease-out;
-        opacity: 0;
-      }
-      
-      .message-visible {
-        transform: translateX(0);
-        opacity: 1;
-      }
-      
-      .message-hiding {
-        transform: translateX(120%);
-        opacity: 0;
-      }
-      
-      .message-info {
-        border-left: 4px solid #3498db;
-      }
-      
-      .message-warning {
-        border-left: 4px solid #f39c12;
-      }
-      
-      .message-error {
-        border-left: 4px solid #e74c3c;
-      }
-      
-      .message-content {
-        flex: 1;
-        margin-right: 10px;
-      }
-      
-      .message-close {
-        background: none;
-        border: none;
-        font-size: 20px;
-        cursor: pointer;
-        color: #999;
-      }
-      
-      .message-close:hover {
-        color: #333;
-      }
-    `;
-    document.head.appendChild(styleEl);
-  }
-}
+// // Add required CSS by linking to the centralized CSS file
+// export function addMessageStyles() {
+//   if (!document.getElementById('ui-components-styles')) {
+//     const linkEl = document.createElement('link');
+//     linkEl.id = 'ui-components-styles';
+//     linkEl.rel = 'stylesheet';
+//     linkEl.href = './components/ui/styles/ui-components.css';
+//     document.head.appendChild(linkEl);
+//   }
+// }
 
-// Initialize styles when module is imported
-addMessageStyles();
+// // Initialize styles when module is imported
+// addMessageStyles();
