@@ -34,6 +34,13 @@ This dashboard demonstrates a modular approach to visualizing DNA mutation data.
 
 <div class="grid grid-cols-1 gap-4 mt-4">
   <div class="card p-4">
+    <h2 class="mb-4">Similar Sequences Geographic Distribution</h2>
+    <div id="user-geo-container" style="width: 100%; height: 460px; position: relative;"></div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 gap-4 mt-4">
+  <div class="card p-4">
     <h2 class="mb-4">Mutation Details</h2>
     <div id="details-panel" class="mt-4 p-4 border rounded">
       <p class="text-center text-gray-500">Select a mutation point to view details</p>
@@ -80,7 +87,8 @@ import {
 // addStatusStyles();
 
 import * as d3 from "d3";
-import { createMap } from "./components/visualizations/map-component.js";
+// import * as L from "npm:leaflet";  // Observable Framework way to import Leaflet
+// import { createMap } from "./components/visualizations/map-component.js";
 import { createApiMap } from "./components/visualizations/api-map-component.js";
 import { createUmapScatterPlot } from "./components/visualizations/scatter-plot.js";
 // import { updateDetailsPanel, addContainerStyles } from "./components/ui/dom-utils.js";
@@ -113,6 +121,7 @@ import {
   fetchAllSequences,
   findSimilarSequences
 } from './components/data/api-similarity-service.js';
+import { createUserGeoMap } from "./components/visualizations/user-geo-map.js";
 // Make FileAttachment available globally if it exists in this context
 // This helps our components detect if they're running in Observable
 if (typeof FileAttachment !== 'undefined') {
@@ -131,7 +140,8 @@ const state = {
   jobTracker: null,
   jobPollingIntervals: {},
   stopPollingFunctions: {},
-  similarSequences: []
+  similarSequences: [],
+  userGeoMap: null
 };// Add a global cache for UMAP data
 let umapDataCache = null;
 
@@ -595,6 +605,14 @@ async function handleJobCompletion(jobId, jobData) {
     
     if (similarSequencesResponse && similarSequencesResponse.result) {
       console.log(`🔍 DEBUG: Found ${similarSequencesResponse.result.length} similar sequences in response`);
+      console.log("🌍 Checking geographic data in API response:", {
+        totalSequences: similarSequencesResponse.result.length,
+        sequencesWithLatLon: similarSequencesResponse.result.filter(seq => seq.metadata?.lat_lon).length,
+        sampleMetadata: similarSequencesResponse.result[0]?.metadata
+      });
+
+      // Modify this line to pass the response we already have
+      await handleSimilarSequences(jobId, similarSequencesResponse);
     } else {
       console.log("🔍 DEBUG: No similar sequences found in response");
     }
@@ -938,7 +956,7 @@ function getSequenceColor(index) {
 
 // Function to set up cross-highlighting between Reference and User UMAPs
 function setupCrossHighlighting() {
-  console.log("Setting up cross-highlighting between Reference and User UMAPs");
+  console.log("Setting up cross-highlighting between visualizations");
   
   // Set cross-highlight function in Reference UMAP
   if (state.scatterComponent && typeof state.scatterComponent.setCrossHighlightFunction === 'function') {
@@ -947,6 +965,42 @@ function setupCrossHighlighting() {
       console.log(`Cross-highlight from Reference to User UMAP: ${pointId} (${highlight ? 'on' : 'off'})`);
       if (state.userScatterComponent && state.userScatterComponent.highlightPoint) {
         state.userScatterComponent.highlightPoint(pointId, highlight);
+      }
+      // In setupCrossHighlighting function
+      if (state.userGeoMap && state.userGeoMap.highlightSequence) {
+        // Add event listeners to the user geo map points
+        const userGeoContainer = document.getElementById('user-geo-container');
+        if (userGeoContainer) {
+          const points = userGeoContainer.querySelectorAll('.map-point');
+          points.forEach(point => {
+            point.addEventListener('mouseover', () => {
+              const pointId = point.getAttribute('data-id');
+              if (pointId) {
+                if (state.userScatterComponent && state.userScatterComponent.highlightPoint) {
+                  state.userScatterComponent.highlightPoint(pointId, true);
+                }
+                if (state.scatterComponent && state.scatterComponent.highlightPoint) {
+                  state.scatterComponent.highlightPoint(pointId, true);
+                }
+              }
+            });
+            
+            point.addEventListener('mouseout', () => {
+              const pointId = point.getAttribute('data-id');
+              if (pointId) {
+                if (state.userScatterComponent && state.userScatterComponent.highlightPoint) {
+                  state.userScatterComponent.highlightPoint(pointId, false);
+                }
+                if (state.scatterComponent && state.scatterComponent.highlightPoint) {
+                  state.scatterComponent.highlightPoint(pointId, false);
+                }
+              }
+            });
+          });
+        }
+        console.log("Set up event listeners for User Geo Map points");
+      } else {
+        console.warn("User geo map does not support highlighting");
       }
     };
     
@@ -965,6 +1019,10 @@ function setupCrossHighlighting() {
       if (state.scatterComponent && state.scatterComponent.highlightPoint) {
         state.scatterComponent.highlightPoint(pointId, highlight);
       }
+      // Also highlight in user geo map
+      if (state.userGeoMap && state.userGeoMap.highlightSequence) {
+        state.userGeoMap.highlightSequence(pointId, highlight);
+      }
     };
     
     // Set up the cross-highlight function in User UMAP
@@ -972,6 +1030,43 @@ function setupCrossHighlighting() {
     console.log("Set cross-highlight function in User UMAP");
   } else {
     console.warn("User scatter component does not support cross-highlighting");
+  }
+
+  // Set up cross-highlight function in User Geo Map
+  if (state.userGeoMap && state.userGeoMap.highlightSequence) {
+    // Add event listeners to the user geo map points
+    const userGeoContainer = document.getElementById('user-geo-container');
+    if (userGeoContainer) {
+      const points = userGeoContainer.querySelectorAll('.map-point');
+      points.forEach(point => {
+        point.addEventListener('mouseover', () => {
+          const pointId = point.getAttribute('data-id');
+          if (pointId) {
+            if (state.userScatterComponent && state.userScatterComponent.highlightPoint) {
+              state.userScatterComponent.highlightPoint(pointId, true);
+            }
+            if (state.scatterComponent && state.scatterComponent.highlightPoint) {
+              state.scatterComponent.highlightPoint(pointId, true);
+            }
+          }
+        });
+        
+        point.addEventListener('mouseout', () => {
+          const pointId = point.getAttribute('data-id');
+          if (pointId) {
+            if (state.userScatterComponent && state.userScatterComponent.highlightPoint) {
+              state.userScatterComponent.highlightPoint(pointId, false);
+            }
+            if (state.scatterComponent && state.scatterComponent.highlightPoint) {
+              state.scatterComponent.highlightPoint(pointId, false);
+            }
+          }
+        });
+      });
+    }
+    console.log("Set up event listeners for User Geo Map points");
+  } else {
+    console.warn("User geo map does not support highlighting");
   }
 }
 
@@ -1283,7 +1378,18 @@ function initializeUserScatterPlot(container, data = [], options = {}) {
       const userScatterContainer = document.getElementById('user-scatter-container');
       state.userScatterComponent = initializeUserScatterPlot(userScatterContainer, []);
       
-      // Set up cross-highlighting between scatter plots
+      // Create empty user geo map
+      console.log("Creating user geo map...");
+      const userGeoContainer = document.getElementById('user-geo-container');
+      try {
+        state.userGeoMap = await createUserGeoMap('user-geo-container');
+        console.log("User geo map created successfully");
+      } catch (error) {
+        console.error("Error creating user geo map:", error);
+        showErrorMessage("Error initializing geographic visualization");
+      }
+      
+      // Set up cross-highlighting between visualizations
       setupCrossHighlighting();
       
       // Show API data notice
@@ -1320,6 +1426,12 @@ function initializeUserScatterPlot(container, data = [], options = {}) {
               state.scatterComponent.clearHighlights();
             }
             
+            // Reset the user geo map
+            if (state.userGeoMap) {
+              console.log("Resetting user geo map");
+              state.userGeoMap.updateMap(null, []);
+            }
+            
             // Re-setup cross-highlighting
             setupCrossHighlighting();
             
@@ -1347,6 +1459,12 @@ function initializeUserScatterPlot(container, data = [], options = {}) {
         // Reset any highlighting in the reference scatter plot
         if (state.scatterComponent && state.scatterComponent.clearHighlights) {
           state.scatterComponent.clearHighlights();
+        }
+        
+        // Reset the user geo map
+        if (state.userGeoMap) {
+          console.log("Resetting user geo map");
+          state.userGeoMap.updateMap(null, []);
         }
         
         // Re-setup cross-highlighting (important after recreating components)
@@ -3450,7 +3568,66 @@ document.head.insertAdjacentHTML('beforeend', `
     .similarity-low .similarity-badge {
       background-color: #F44336;
     }
+    
+    /* Add container styles for user geo map */
+    #user-geo-container {
+      width: 100%;
+      height: 460px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #eee;
+      border-radius: 4px;
+    }
+    #user-geo-container svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
   </style>
 `);
 
+async function handleSimilarSequences(jobId, similarSequencesResponse) {
+  try {
+    console.log("Processing similar sequences for job:", jobId);
+    console.log("Similar sequences response:", similarSequencesResponse);
+
+    if (similarSequencesResponse && similarSequencesResponse.result) {
+      // Update geo map visualization
+      if (state.userGeoMap && state.userGeoMap.updateMap) {
+        console.log("🌍 Updating geo map with similar sequences");
+        console.log("Number of similar sequences:", similarSequencesResponse.result.length);
+        
+        // Create user sequence with geo data from the first similar sequence
+        // This is valid since similar sequences are from the same location as the user sequence
+        const userSequenceWithGeo = {
+          id: jobId,
+          label: "Your Sequence",
+          isUserSequence: true,
+          metadata: {
+            lat_lon: similarSequencesResponse.result[0]?.metadata?.lat_lon
+          }
+        };
+        
+        console.log("User sequence with geo:", userSequenceWithGeo);
+        console.log("First similar sequence metadata:", similarSequencesResponse.result[0]?.metadata);
+        
+        // Update the map with the sequences
+        state.userGeoMap.updateMap(userSequenceWithGeo, similarSequencesResponse.result);
+      } else {
+        console.warn("User geo map component not found or updateMap method not available");
+      }
+    } else {
+      console.warn("No similar sequences data available in the response");
+    }
+
+  } catch (error) {
+    console.error("Error in handleSimilarSequences:", error);
+    console.error("Error details:", {
+      jobId,
+      similarSequencesResponseAvailable: !!similarSequencesResponse,
+      similarSequencesType: typeof similarSequencesResponse
+    });
+    showErrorMessage("Failed to process similar sequences");
+  }
+}
 
