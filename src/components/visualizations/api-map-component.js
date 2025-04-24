@@ -1,6 +1,7 @@
 /**
  * API-specific map component
- * A standalone implementation for geographic visualization of UMAP data
+ * A standalone implementation for geographic visualization of UMAP data.
+ * This version aggregates sequences by country and displays country markers.
  */
 
 import * as d3 from 'd3'
@@ -8,139 +9,129 @@ import { geoEquirectangular, geoPath, geoGraticule } from 'd3-geo'
 import * as topojson from 'topojson-client'
 
 /**
- * Create a map visualization for UMAP data
+ * Create a map visualization for UMAP data, aggregating by country.
  * @param {string} containerId - ID of the container element
- * @param {Array} data - UMAP data points
+ * @param {Array} data - Initial data points (can be empty). Expected format includes sequence info with metadata like country and similarity.
  * @param {Object} options - Configuration options
- * @returns {Object} Map component with update method
+ * @returns {Object} Map component API
  */
-function createApiMap(containerId, data, options = {}) {
-  console.log(`Creating API map with ${data?.length || 0} points`)
+function createApiMap(containerId, data = [], options = {}) {
+  // Default data to empty array
+  console.log(`Creating API map (Country Aggregation) for ${containerId}`)
 
   // Default options
   const defaults = {
-    width: null, // Will be determined from container
-    height: null, // Will be determined from container
-    margin: { top: 10, right: 10, bottom: 30, left: 10 }, // Increased bottom margin
-    colorScale: d3.scaleOrdinal(d3.schemeCategory10),
-    onPointClick: null,
-    transitionDuration: 500,
+    width: null,
+    height: null,
+    margin: { top: 10, right: 10, bottom: 10, left: 10 }, // Reduced bottom margin as legend is separate now
+    // Define scales for color (similarity) and size (count)
+    similarityColorScale: d3
+      .scaleSequential(d3.interpolateViridis)
+      .domain([0.5, 1]), // Color based on avg similarity (adjust domain as needed)
+    countRadiusScale: d3.scaleSqrt().domain([1, 100]).range([4, 20]), // Size based on count (adjust domain/range)
+    onPointClick: null, // Might be repurposed for country click
+    transitionDuration: 300,
     defaultOpacity: 0.7,
     highlightOpacity: 1.0,
-    minRadius: 5,
-    maxRadius: 30,
-    legendHeight: 80, // Further increased height for the legend
-    legendMargin: { top: 5, right: 20, bottom: 25, left: 20 }, // Adjusted margins
+    // Legend options are now less relevant here as it's external
+    // legendHeight: 80,
+    // legendMargin: { top: 5, right: 20, bottom: 25, left: 20 },
   }
 
   // Merge provided options with defaults
   const config = { ...defaults, ...options }
+  // Deep merge scales if provided
+  if (options.similarityColorScale)
+    config.similarityColorScale = options.similarityColorScale
+  if (options.countRadiusScale)
+    config.countRadiusScale = options.countRadiusScale
 
-  // Get the container element
+  // --- Container Setup ---
   const container = document.getElementById(containerId)
   if (!container) {
     console.error(`Container with ID "${containerId}" not found`)
     return null
   }
+  container.style.position = container.style.position || 'relative'
 
-  // Get actual dimensions from container
-  const width = config.width || container.clientWidth
-  const height = (config.height || container.clientHeight) - config.legendHeight
+  // --- SVG Setup ---
+  let width = config.width || container.clientWidth
+  // let height = (config.height || container.clientHeight) - config.legendHeight; // Legend height removed
+  let height = config.height || container.clientHeight
 
-  // Calculate inner dimensions (accounting for margins)
-  const innerWidth = width - config.margin.left - config.margin.right
-  const innerHeight = height - config.margin.top - config.margin.bottom
+  // Calculate inner dimensions
+  let innerWidth = width - config.margin.left - config.margin.right
+  let innerHeight = height - config.margin.top - config.margin.bottom
 
-  // Create SVG with proper dimensions
+  // Clear previous SVG
+  d3.select(container).select('svg').remove()
+
   const svg = d3
     .select(container)
     .append('svg')
     .attr('width', '100%')
     .attr('height', '100%')
-    .attr('viewBox', [0, 0, width, height + config.legendHeight])
+    // .attr('viewBox', [0, 0, width, height + config.legendHeight]) // Legend height removed
+    .attr('viewBox', [0, 0, width, height])
     .attr('preserveAspectRatio', 'xMidYMid meet')
 
-  // Create a group for the map with margins
   const g = svg
     .append('g')
+    .attr('class', 'map-content')
     .attr('transform', `translate(${config.margin.left},${config.margin.top})`)
 
-  // Create a projection - using Equirectangular for better width filling
+  // --- Projection and Path ---
   const projection = geoEquirectangular()
     .fitSize([innerWidth, innerHeight], { type: 'Sphere' })
-    .scale(innerWidth / 6.2) // Adjust scale to fill width better
-    .translate([innerWidth / 2, innerHeight / 1.8 - 10]) // Shifted up by 10px
+    .scale(innerWidth / 6.2)
+    .translate([innerWidth / 2, innerHeight / 1.8]) // Adjusted vertical translation slightly
 
-  // Create a path generator
   const pathGenerator = geoPath().projection(projection)
-
-  // Create a graticule generator
   const graticule = geoGraticule()
 
-  // Add a background
+  // --- Map Background Elements ---
   g.append('path')
     .attr('class', 'sphere')
     .attr('d', pathGenerator({ type: 'Sphere' }))
-    .attr('fill', '#f8f9fa')
-    .attr('stroke', '#ddd')
+    .attr('fill', '#f0f0f0') // Lighter sphere
+    .attr('stroke', '#ccc')
     .attr('stroke-width', 0.5)
 
-  // Add graticules
   g.append('path')
     .attr('class', 'graticule')
     .attr('d', pathGenerator(graticule()))
     .attr('fill', 'none')
-    .attr('stroke', '#eee')
+    .attr('stroke', '#e0e0e0') // Lighter grid
     .attr('stroke-width', 0.5)
 
-  // Create a group for the world map
+  // Groups for map layers
   const worldGroup = g.append('g').attr('class', 'world')
+  const circlesGroup = g.append('g').attr('class', 'country-markers') // Renamed group
 
-  // Create a group for the aggregated circles
-  const circlesGroup = g.append('g').attr('class', 'circles')
-
-  // Create a group for the legend with a background
-  const legendBackground = svg
-    .append('rect')
-    .attr('x', 0)
-    .attr('y', height - 15)
-    .attr('width', width)
-    .attr('height', config.legendHeight + 15)
-    .attr('fill', '#f8f9fa')
-    .attr('stroke', '#eee')
-    .attr('stroke-width', 1)
-
-  const legendGroup = svg
-    .append('g')
-    .attr('class', 'legend')
-    .attr(
-      'transform',
-      `translate(${config.legendMargin.left},${
-        height + config.legendMargin.top
-      })`
-    )
-
-  // Store world data
-  let worldData = null
-  let worldCountries = null
-
-  // Create tooltip
+  // --- Tooltip ---
   const tooltip = d3
-    .select('body')
+    .select('body') // Attach tooltip to body to avoid SVG clipping issues
     .append('div')
     .attr('class', 'map-tooltip')
     .style('position', 'absolute')
     .style('visibility', 'hidden')
-    .style('background-color', 'white')
-    .style('border', '1px solid #ddd')
+    .style('opacity', 0)
+    .style('background-color', 'rgba(255, 255, 255, 0.9)')
+    .style('border', '1px solid #ccc')
     .style('border-radius', '4px')
-    .style('padding', '8px')
-    .style('box-shadow', '0 2px 4px rgba(0,0,0,0.1)')
+    .style('padding', '8px 10px')
+    .style('box-shadow', '0 2px 5px rgba(0,0,0,0.15)')
+    .style('font-family', 'sans-serif')
     .style('font-size', '12px')
     .style('pointer-events', 'none')
     .style('z-index', 1000)
+    .style('transition', 'opacity 0.2s ease-out, visibility 0.2s ease-out')
 
-  // Explicit country coordinates (longitude, latitude)
+  // --- Legend Removed ---
+  // const legendBackground = svg.append('rect')... // REMOVED
+  // const legendGroup = svg.append('g')... // REMOVED
+
+  // --- Explicit Country Coordinates & Name Standardization (Keep as is) ---
   const countryCoordinates = {
     'United States': [-98.5795, 39.8283],
     China: [104.1954, 35.8617],
@@ -196,8 +187,6 @@ function createApiMap(containerId, data, options = {}) {
     Iraq: [43.6793, 33.2232],
     Unknown: [0, 0], // Default position for unknown countries
   }
-
-  // Country name standardization
   const countryNameMap = {
     usa: 'United States',
     'united states': 'United States',
@@ -311,398 +300,307 @@ function createApiMap(containerId, data, options = {}) {
     'republic of iraq': 'Iraq',
     unknown: 'Unknown',
   }
-
-  // Function to standardize country names
   function standardizeCountryName(countryName) {
     if (!countryName) return 'Unknown'
-
     const lowerName = countryName.toLowerCase().trim()
-
-    // Direct mapping
     if (countryNameMap[lowerName]) {
       return countryNameMap[lowerName]
     }
-
-    // Try to find a partial match
     for (const [key, value] of Object.entries(countryNameMap)) {
       if (lowerName.includes(key) || key.includes(lowerName)) {
         return value
       }
     }
-
-    // If no match found, return the original with first letter capitalized
-    console.log(`Country name not standardized: ${countryName}`)
+    // console.warn(`Country name not standardized: ${countryName}`) // Be less noisy
     return countryName.charAt(0).toUpperCase() + countryName.slice(1)
   }
 
-  // Function to get country coordinates
+  // --- Declare worldCountries in the outer scope ---
+  let worldCountries = null // Use let since it will be reassigned
+  let worldDataLoaded = false // Keep track of loading state
+
+  // --- getCountryCoordinates function (ensure it checks the scoped worldCountries) ---
   function getCountryCoordinates(countryName) {
     const standardName = standardizeCountryName(countryName)
-
     if (countryCoordinates[standardName]) {
       const [longitude, latitude] = countryCoordinates[standardName]
       return projection([longitude, latitude])
     }
 
-    // If country not found in our coordinates list
-    console.log(`No coordinates for country: ${standardName}`)
-    return projection([0, 0]) // Default to center of map
-  }
-
-  // Aggregate data by country
-  function aggregateDataByCountry(data) {
-    const countryData = {}
-
-    // Count sequences by country
-    data.forEach((item) => {
-      if (!item) return
-
-      const country = standardizeCountryName(item.first_country || 'Unknown')
-
-      if (!countryData[country]) {
-        countryData[country] = {
-          country: country,
-          count: 0,
-          sequences: [],
+    // --- Check the SCOPED worldCountries variable ---
+    if (worldCountries && worldDataLoaded) {
+      // Check flag too
+      const countryFeature = worldCountries.features.find(
+        (f) => standardizeCountryName(f.properties.name) === standardName
+      )
+      if (countryFeature) {
+        const centroid = geoPath().centroid(countryFeature)
+        if (centroid && !isNaN(centroid[0]) && !isNaN(centroid[1])) {
+          return projection(centroid)
         }
       }
+    }
+    // --- End check ---
 
-      countryData[country].count++
-      countryData[country].sequences.push(item)
-    })
-
-    // Convert to array
-    return Object.values(countryData)
+    // console.warn(`No coordinates for country: ${standardName}`) // Less noisy
+    return projection([0, 0]) // Fallback
   }
 
-  // Update the map with new data
-  function updateMap(newData, updateOptions = {}) {
-    console.log(`Updating map with ${newData?.length || 0} points`)
+  /**
+   * Updates the map with new sequence data, aggregating by country.
+   * @param {Array} newData - Array of sequence data points (e.g., referenceMapData100).
+   * @param {Object|null} userSequence - Optional user sequence for context (not directly plotted here).
+   * @param {Object} updateOptions - Options for this specific update.
+   */
+  function updateMap(newData = [], userSequence = null, updateOptions = {}) {
+    console.log(
+      `API Map: Updating with ${newData.length} sequences, aggregating by country.`
+    )
 
-    // Merge update options with config
+    // Merge update options
     const updateConfig = { ...config, ...updateOptions }
 
-    // Aggregate data by country
+    // --- Step 1: Aggregate Data ---
     const countryData = {}
-
     newData.forEach((point) => {
+      if (!point || !point.metadata) return // Skip points without metadata
+
+      // Use standardized country name
       const country = standardizeCountryName(
-        point.first_country || point.country || 'Unknown'
+        point.metadata.country || point.metadata.first_country || 'Unknown'
       )
+      // Ensure similarity is a number
+      const similarity =
+        typeof point.similarity === 'number' ? point.similarity : 0
 
       if (!countryData[country]) {
         countryData[country] = {
           country: country,
           count: 0,
-          sequences: [],
+          totalSimilarity: 0,
+          sequences: [], // Store original sequences if needed for tooltips/clicks
+          isolationSources: new Set(), // Collect unique sources
         }
       }
 
       countryData[country].count++
+      countryData[country].totalSimilarity += similarity
       countryData[country].sequences.push(point)
+      if (point.metadata.isolation_source) {
+        countryData[country].isolationSources.add(
+          point.metadata.isolation_source
+        )
+      }
     })
 
-    // Convert to array for D3
+    // Calculate average similarity and convert to array
     const aggregatedData = Object.values(countryData)
-    console.log(`Aggregated to ${aggregatedData.length} countries`)
-    console.log('Country data:', aggregatedData)
+      .map((d) => ({
+        ...d,
+        avgSimilarity: d.count > 0 ? d.totalSimilarity / d.count : 0,
+        isolationSources: Array.from(d.isolationSources), // Convert Set to Array
+      }))
+      .filter((d) => d.count > 0) // Filter out any potential empty groups
 
-    // Create a scale for circle radius based on count
+    console.log(`API Map: Aggregated into ${aggregatedData.length} countries.`)
+    // console.log('Aggregated Country Data:', aggregatedData); // Optional detailed log
+
+    // --- Step 2: Update Scales ---
+    // Update count scale domain based on current data
     const maxCount = d3.max(aggregatedData, (d) => d.count) || 1
-    const radiusScale = d3
-      .scaleSqrt()
-      .domain([1, maxCount])
-      .range([updateConfig.minRadius, updateConfig.maxRadius])
+    updateConfig.countRadiusScale.domain([1, maxCount])
+    // Similarity scale domain is usually fixed (e.g., 0 to 1 or 0.5 to 1)
+    // config.similarityColorScale.domain([minAvgSimilarity, maxAvgSimilarity]); // Optionally update domain
 
-    // Update the legend
-    updateLegend(radiusScale, maxCount)
-
-    // Join data with circles
+    // --- Step 3: Data Join for Country Markers ---
     const circles = circlesGroup
-      .selectAll('.country-circle')
-      .data(aggregatedData, (d) => d.country)
+      .selectAll('.country-marker')
+      .data(aggregatedData, (d) => d.country) // Key by country name
 
-    // Remove old circles
+    // --- Step 4: Exit ---
     circles
       .exit()
-      .transition()
-      .duration(updateConfig.transitionDuration)
+      .transition('exit')
+      .duration(updateConfig.transitionDuration / 2)
       .attr('r', 0)
       .remove()
 
-    // Add new circles
+    // --- Step 5: Enter ---
     const enterCircles = circles
       .enter()
       .append('circle')
-      .attr('class', 'country-circle')
-      .attr('r', 0)
-      .style('fill', (d) => updateConfig.colorScale(d.country))
-      .style('fill-opacity', updateConfig.defaultOpacity)
-      .style('stroke', '#fff')
-      .style('stroke-width', 1)
+      .attr('class', 'country-marker')
+      .attr('r', 0) // Start radius at 0
+      .style('stroke', '#333') // Darker stroke for better visibility
+      .style('stroke-width', 0.5)
       .style('cursor', 'pointer')
+      .attr('data-country', (d) => d.country) // Add country attribute
+
+    // --- Step 6: Update + Enter ---
+    const mergedCircles = enterCircles.merge(circles)
+
+    // Position circles and apply styles
+    mergedCircles.each(function (d) {
+      const coords = getCountryCoordinates(d.country)
+      if (coords && !isNaN(coords[0]) && !isNaN(coords[1])) {
+        d3.select(this)
+          .transition('update-pos')
+          .duration(updateConfig.transitionDuration)
+          .attr('cx', coords[0])
+          .attr('cy', coords[1])
+      } else {
+        console.warn(
+          `Could not get valid coordinates for ${d.country}. Hiding marker.`
+        )
+        d3.select(this).attr('cx', null).attr('cy', null).attr('r', 0) // Hide if no coords
+      }
+    })
+
+    mergedCircles
+      .transition('update-style')
+      .duration(updateConfig.transitionDuration)
+      .attr('r', (d) => updateConfig.countRadiusScale(d.count)) // Size by count
+      .style('fill', (d) => updateConfig.similarityColorScale(d.avgSimilarity)) // Color by avg similarity
+      .style('fill-opacity', updateConfig.defaultOpacity)
+
+    // --- Step 7: Event Handlers ---
+    mergedCircles
       .on('mouseover', function (event, d) {
         d3.select(this)
+          .transition('mouseover')
+          .duration(100)
           .style('fill-opacity', updateConfig.highlightOpacity)
-          .style('stroke-width', 2)
-
-        tooltip.style('visibility', 'visible').html(getTooltipContent(d))
+          .style('stroke-width', 1.5)
 
         tooltip
-          .style('top', event.pageY - 10 + 'px')
-          .style('left', event.pageX + 10 + 'px')
+          .html(getTooltipContent(d)) // Use updated tooltip function
+          .style('visibility', 'visible')
+          .transition('tooltip-in')
+          .duration(100)
+          .style('opacity', 1)
       })
       .on('mousemove', function (event) {
         tooltip
-          .style('top', event.pageY - 10 + 'px')
-          .style('left', event.pageX + 10 + 'px')
+          .style('top', event.pageY - 15 + 'px') // Adjust position slightly
+          .style('left', event.pageX + 15 + 'px')
       })
       .on('mouseout', function () {
         d3.select(this)
+          .transition('mouseout')
+          .duration(100)
           .style('fill-opacity', updateConfig.defaultOpacity)
-          .style('stroke-width', 1)
+          .style('stroke-width', 0.5)
 
-        tooltip.style('visibility', 'hidden')
+        tooltip
+          .transition('tooltip-out')
+          .duration(100)
+          .style('opacity', 0)
+          .end() // Use end() promise for reliable visibility change
+          .then(() => tooltip.style('visibility', 'hidden'))
       })
       .on('click', function (event, d) {
+        console.log('Clicked country marker:', d)
         if (updateConfig.onPointClick) {
-          updateConfig.onPointClick(d)
+          // Pass relevant country data to the click handler
+          updateConfig.onPointClick({ type: 'country', data: d })
         }
+        // Add visual feedback for click if desired (e.g., thicker stroke)
+        d3.select(this)
+          .transition('click')
+          .duration(50)
+          .style('stroke-width', 2.5)
+          .transition()
+          .delay(150)
+          .duration(200)
+          .style('stroke-width', 1.5) // Briefly thicken stroke
       })
-
-    // Position circles
-    enterCircles.each(function (d) {
-      const coords = getCountryCoordinates(d.country)
-      if (coords) {
-        d3.select(this).attr('cx', coords[0]).attr('cy', coords[1])
-      }
-    })
-
-    // Animate new circles
-    enterCircles
-      .transition()
-      .duration(updateConfig.transitionDuration)
-      .attr('r', (d) => radiusScale(d.count))
-
-    // Update existing circles
-    circles
-      .transition()
-      .duration(updateConfig.transitionDuration)
-      .attr('r', (d) => radiusScale(d.count))
-      .style('fill', (d) => updateConfig.colorScale(d.country))
-
-    // Update positions of existing circles
-    circles.each(function (d) {
-      const coords = getCountryCoordinates(d.country)
-      if (coords) {
-        d3.select(this).attr('cx', coords[0]).attr('cy', coords[1])
-      }
-    })
   }
 
-  // Update the legend based on the current scale
-  function updateLegend(radiusScale, maxCount) {
-    // Clear existing legend
-    legendGroup.selectAll('*').remove()
+  // --- Legend Update Function Removed ---
+  // function updateLegend(radiusScale, maxCount) { ... } // REMOVED
 
-    // Create legend title
-    legendGroup
-      .append('text')
-      .attr('class', 'legend-title')
-      .attr('x', 0)
-      .attr('y', 0)
-      .attr('dy', '0.35em')
-      .style('font-size', '12px')
-      .style('font-weight', 'bold')
-      .text('Sequence Count')
+  /**
+   * Generates HTML content for the tooltip based on aggregated country data.
+   * @param {Object} aggregatedCountryData - The data object for the hovered country.
+   * @returns {string} HTML string for the tooltip.
+   */
+  function getTooltipContent(aggregatedCountryData) {
+    const { country, count, avgSimilarity, isolationSources } =
+      aggregatedCountryData
+    const avgSimilarityPercent = (avgSimilarity * 100).toFixed(1)
 
-    // Get the minimum count from the data
-    const minCount =
-      d3.min(
-        circlesGroup.selectAll('.country-circle').data(),
-        (d) => d.count
-      ) || 1
-
-    // Create 5 bubbles with specific values
-    const numBubbles = 5
-    const minValue = minCount
-    const maxValue = maxCount
-    const middleValue = Math.round(maxValue / 2)
-
-    // Calculate values for all 5 bubbles
-    const bubbleValues = [
-      minValue, // First bubble: minimum count
-      Math.round((minValue + middleValue) / 2), // Second bubble: middle between min and half of max
-      middleValue, // Third bubble: half of max
-      Math.round((middleValue + maxValue) / 2), // Fourth bubble: middle between half of max and max
-      maxValue, // Fifth bubble: max
-    ]
-
-    // Calculate legend width (50% of available width)
-    const legendWidth =
-      (width - config.legendMargin.left - config.legendMargin.right) * 0.5
-
-    // Calculate starting position to center the legend
-    const startX =
-      (width -
-        config.legendMargin.left -
-        config.legendMargin.right -
-        legendWidth) /
-      2
-
-    // Calculate spacing between circles
-    const circleSpacing = legendWidth / (numBubbles - 1)
-
-    // Create array of bubble sizes
-    const bubbleSizes = bubbleValues.map((value) => ({
-      value: value,
-      // Scale down the radius by 0.7 to make bubbles smaller
-      radius: radiusScale(value) * 0.7,
-    }))
-
-    // Add circles and labels
-    bubbleSizes.forEach((bubble, i) => {
-      const cx = startX + i * circleSpacing
-
-      // Add circle
-      legendGroup
-        .append('circle')
-        .attr('cx', cx)
-        .attr('cy', 20)
-        .attr('r', bubble.radius)
-        .style('fill', '#6c757d')
-        .style('fill-opacity', 0.7)
-        .style('stroke', '#fff')
-        .style('stroke-width', 1)
-
-      // Add count value below the circle for all bubbles
-      legendGroup
-        .append('text')
-        .attr('x', cx)
-        .attr('y', 20 + bubble.radius + 15)
-        .attr('text-anchor', 'middle')
-        .style('font-size', '11px')
-        .text(bubble.value)
-    })
-  }
-
-  // Generate tooltip content
-  function getTooltipContent(aggregatedData) {
-    const { country, count, sequences } = aggregatedData
-
-    // Get years range if available
-    let yearRange = ''
-    if (sequences && sequences.length > 0) {
-      const years = sequences
-        .map((seq) => seq.first_date)
-        .filter((date) => date && date !== 'Unknown')
-        .map((date) => {
-          // Try to extract year from date string
-          const match = date.match(/(\d{4})/)
-          return match ? parseInt(match[1], 10) : null
-        })
-        .filter((year) => year !== null)
-
-      if (years.length > 0) {
-        const minYear = Math.min(...years)
-        const maxYear = Math.max(...years)
-        yearRange =
-          minYear === maxYear
-            ? `<p style="margin: 4px 0;"><strong>Year:</strong> ${minYear}</p>`
-            : `<p style="margin: 4px 0;"><strong>Years:</strong> ${minYear} - ${maxYear}</p>`
-      }
-    }
+    // Display top N isolation sources
+    const maxSourcesToShow = 3
+    const sourcesToShow = isolationSources.slice(0, maxSourcesToShow).join(', ')
+    const remainingSources = isolationSources.length - maxSourcesToShow
+    const sourcesString =
+      isolationSources.length > 0
+        ? `${sourcesToShow}${
+            remainingSources > 0 ? ` (+${remainingSources} more)` : ''
+          }`
+        : 'N/A'
 
     return `
-      <div style="font-family: sans-serif;">
-        <h4 style="margin: 0 0 8px 0;">${country}</h4>
-        <p style="margin: 4px 0;"><strong>Sequences:</strong> ${count}</p>
-        ${yearRange}
-      </div>
+        <h4 style="margin: 0 0 6px 0; border-bottom: 1px solid #eee; padding-bottom: 4px;">${country}</h4>
+        <p style="margin: 3px 0;"><strong>Sequences:</strong> ${count}</p>
+        <p style="margin: 3px 0;"><strong>Avg. Similarity:</strong> ${avgSimilarityPercent}%</p>
+        <p style="margin: 3px 0;"><strong>Sources:</strong> ${sourcesString}</p>
     `
   }
 
-  // Handle window resize
+  /**
+   * Handles window resize events.
+   */
   function handleResize() {
-    const newWidth = container.clientWidth
-    const newHeight = container.clientHeight - config.legendHeight
+    width = container.clientWidth
+    // height = container.clientHeight - config.legendHeight; // Legend height removed
+    height = container.clientHeight
+    innerWidth = width - config.margin.left - config.margin.right
+    innerHeight = height - config.margin.top - config.margin.bottom
 
-    // Update viewBox
-    svg.attr('viewBox', [0, 0, newWidth, newHeight + config.legendHeight])
-
-    // Update legend background
-    legendBackground
-      .attr('x', 0)
-      .attr('y', newHeight - 15)
-      .attr('width', newWidth)
-      .attr('height', config.legendHeight + 15)
-
-    // Calculate new inner dimensions
-    const newInnerWidth = newWidth - config.margin.left - config.margin.right
-    const newInnerHeight = newHeight - config.margin.top - config.margin.bottom
+    // Update SVG viewbox
+    // svg.attr('viewBox', [0, 0, width, height + config.legendHeight]); // Legend height removed
+    svg.attr('viewBox', [0, 0, width, height])
 
     // Update projection
     projection
-      .fitSize([newInnerWidth, newInnerHeight], { type: 'Sphere' })
-      .scale(newInnerWidth / 6.2) // Adjust scale to fill width better
-      .translate([newInnerWidth / 2, newInnerHeight / 1.8 - 10]) // Shifted up by 10px
+      .fitSize([innerWidth, innerHeight], { type: 'Sphere' })
+      .scale(innerWidth / 6.2)
+      .translate([innerWidth / 2, innerHeight / 1.8])
 
-    // Update sphere and graticule
+    // Update map elements
     g.select('.sphere').attr('d', pathGenerator({ type: 'Sphere' }))
     g.select('.graticule').attr('d', pathGenerator(graticule()))
-
-    // Update world map
-    if (worldData) {
-      worldGroup.selectAll('.country').attr('d', (d) => pathGenerator(d))
+    if (worldGroup.selectAll('.country').size() > 0) {
+      worldGroup.selectAll('.country').attr('d', pathGenerator)
     }
 
-    // Update circles
-    circlesGroup.selectAll('.country-circle').each(function (d) {
+    // Update country markers position
+    circlesGroup.selectAll('.country-marker').each(function (d) {
       const coords = getCountryCoordinates(d.country)
-      if (coords) {
+      if (coords && !isNaN(coords[0]) && !isNaN(coords[1])) {
         d3.select(this).attr('cx', coords[0]).attr('cy', coords[1])
       }
     })
 
-    // Update legend position
-    legendGroup.attr(
-      'transform',
-      `translate(${config.legendMargin.left},${
-        newHeight + config.legendMargin.top
-      })`
-    )
-
-    // If we have data, update the legend
-    if (circlesGroup.selectAll('.country-circle').size() > 0) {
-      const maxCount =
-        d3.max(
-          circlesGroup.selectAll('.country-circle').data(),
-          (d) => d.count
-        ) || 1
-      const radiusScale = d3
-        .scaleSqrt()
-        .domain([1, maxCount])
-        .range([config.minRadius, config.maxRadius])
-
-      updateLegend(radiusScale, maxCount)
-    }
+    // --- Legend Update Removed ---
+    // if (circlesGroup.selectAll('.country-marker').size() > 0) { ... updateLegend(...) ... } // REMOVED
   }
 
   // Add resize listener
   window.addEventListener('resize', handleResize)
 
-  // Load world map data
-  d3.json('https://unpkg.com/world-atlas@2.0.2/countries-110m.json')
+  // --- Load World Map Data ---
+  // let worldDataLoaded = false; // Moved declaration to outer scope
+  d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
     .then((worldMapData) => {
-      worldData = worldMapData
-
-      // Convert TopoJSON to GeoJSON
+      // --- Assign to the SCOPED worldCountries variable ---
       worldCountries = topojson.feature(
         worldMapData,
         worldMapData.objects.countries
       )
+      // --- End assignment ---
 
-      // Add countries to the map
       worldGroup
         .selectAll('.country')
         .data(worldCountries.features)
@@ -710,41 +608,71 @@ function createApiMap(containerId, data, options = {}) {
         .append('path')
         .attr('class', 'country')
         .attr('d', pathGenerator)
-        .attr('fill', '#e0e0e0')
+        .attr('fill', '#d8d8d8') // Slightly darker land color
         .attr('stroke', '#fff')
-        .attr('stroke-width', 0.5)
+        .attr('stroke-width', 0.3)
 
-      // Initialize with data if provided
+      worldDataLoaded = true // Set flag AFTER data is processed
+      console.log('World map data loaded and rendered.')
+
+      // Initialize with data if provided *after* map is drawn AND data is processed
       if (data && data.length > 0) {
-        updateMap(data, options)
+        updateMap(data, null, options)
       }
     })
     .catch((error) => {
       console.error('Error loading world map data:', error)
-
-      // Still initialize with data if provided, even without the world map
+      // Update map even if world data fails, markers might default to 0,0
       if (data && data.length > 0) {
-        updateMap(data, options)
+        updateMap(data, null, options)
       }
     })
+
+  /**
+   * Highlights a specific country marker.
+   * (Replaces the old highlightPoint function)
+   * @param {string} countryName - The name of the country to highlight.
+   * @param {boolean} highlight - True to highlight, false to unhighlight.
+   */
+  function highlightCountry(countryName, highlight = true) {
+    const standardName = standardizeCountryName(countryName)
+    const marker = circlesGroup.select(
+      `.country-marker[data-country="${standardName}"]`
+    )
+
+    if (!marker.empty()) {
+      marker
+        .transition(`highlight-country-${highlight}`)
+        .duration(150)
+        .style(
+          'fill-opacity',
+          highlight ? config.highlightOpacity : config.defaultOpacity
+        )
+        .style('stroke-width', highlight ? 1.5 : 0.5)
+      return true
+    }
+    return false
+  }
 
   // Return the public API
   return {
     updateMap,
-    svg,
-    g,
+    highlightCountry,
+    svg: svg.node(),
+    g: g.node(),
     projection,
     handleResize,
-    // Method to clean up resources
     destroy: () => {
       window.removeEventListener('resize', handleResize)
       tooltip.remove()
+      svg.remove()
+      console.log(`API Map ${containerId} destroyed.`)
     },
   }
 }
 
-// Make the function available globally
-window.createApiMap = createApiMap;
+// Make the function available globally (optional, depends on usage)
+// window.createApiMap = createApiMap;
 
 // Keep the ES module export
 export { createApiMap }

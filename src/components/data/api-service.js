@@ -3,28 +3,28 @@
  * Handles API requests, configuration, and data transformation
  */
 
-import * as d3 from 'd3';
+import * as d3 from 'd3'
 
 // API configuration
 const API_BASE_URL = 'http://54.169.186.71/api/v1'
 const API_KEY = 'test_key'
 
 // Cache for sequences to avoid redundant API calls
-let cachedSequences = null;
-let sequenceCoordinatesCache = {}; // Cache for sequence coordinates by ID
+let cachedSequences = null
+let sequenceCoordinatesCache = {} // Cache for sequence coordinates by ID
 
 // Export the cache for direct access from dashboard
 window.apiCache = {
-  getSequences: function() {
-    return cachedSequences;
+  getSequences: function () {
+    return cachedSequences
   },
-  getCacheStatus: function() {
+  getCacheStatus: function () {
     return {
       isCached: !!cachedSequences,
-      count: cachedSequences ? cachedSequences.length : 0
-    };
-  }
-};
+      count: cachedSequences ? cachedSequences.length : 0,
+    }
+  },
+}
 
 /**
  * Configure API request with proper headers and parameters
@@ -59,11 +59,13 @@ function configureApiRequest(endpoint, params = {}) {
  * @returns {Promise<Array>} Array of UMAP data points
  */
 async function fetchUmapData(model = 'DNABERT-S', useMock = false) {
-  console.log('🔍 DEBUG: fetchUmapData called with params:', { model, useMock });
-  
+  console.log('🔍 DEBUG: fetchUmapData called with params:', { model, useMock })
+
   // If useMock is true or we're in development environment, use mock data
   if (useMock || window.location.hostname === 'localhost') {
-    console.log('Using mock UMAP data (explicitly requested or running locally)')
+    console.log(
+      'Using mock UMAP data (explicitly requested or running locally)'
+    )
     return mockUmapData(500) // Generate 500 mock data points
   }
 
@@ -74,8 +76,8 @@ async function fetchUmapData(model = 'DNABERT-S', useMock = false) {
     console.log(`Fetching UMAP data from ${apiUrl}`)
     console.log('🔍 DEBUG: API request headers:', {
       'X-API-Key': API_KEY,
-      'accept': 'application/json'
-    });
+      accept: 'application/json',
+    })
 
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -84,38 +86,50 @@ async function fetchUmapData(model = 'DNABERT-S', useMock = false) {
         'X-API-Key': API_KEY,
       },
     })
-    
-    console.log('🔍 DEBUG: API response status:', response.status, response.statusText);
-    
+
+    console.log(
+      '🔍 DEBUG: API response status:',
+      response.status,
+      response.statusText
+    )
+
     if (!response.ok) {
       console.error('🔍 DEBUG: API request failed with details:', {
         status: response.status,
-        statusText: response.statusText
-      });
-      
+        statusText: response.statusText,
+      })
+
       // Try to get error details from response
-      let errorText = "";
+      let errorText = ''
       try {
-        errorText = await response.text();
-        console.error('🔍 DEBUG: API error response:', errorText);
+        errorText = await response.text()
+        console.error('🔍 DEBUG: API error response:', errorText)
       } catch (e) {
-        console.error('🔍 DEBUG: Could not read error response body');
+        console.error('🔍 DEBUG: Could not read error response body')
       }
-      
+
       // Check if this is an API key authentication error
-      if (response.status === 401 || response.status === 403 || 
-          (errorText && errorText.includes("API Key"))) {
-        console.warn('🔍 DEBUG: API authentication error detected, using mock data');
-        return mockUmapData(500); // Generate 500 mock points
+      if (
+        response.status === 401 ||
+        response.status === 403 ||
+        (errorText && errorText.includes('API Key'))
+      ) {
+        console.warn(
+          '🔍 DEBUG: API authentication error detected, using mock data'
+        )
+        return mockUmapData(500) // Generate 500 mock points
       }
-      
+
       throw new Error(`API request failed with status ${response.status}`)
     }
 
     // Get the text response
     const text = await response.text()
-    console.log('🔍 DEBUG: API response text (first 200 chars):', text.substring(0, 200));
-    
+    console.log(
+      '🔍 DEBUG: API response text (first 200 chars):',
+      text.substring(0, 200)
+    )
+
     // Split the text by newlines and parse each line as JSON
     const jsonLines = text
       .split('\n')
@@ -134,17 +148,19 @@ async function fetchUmapData(model = 'DNABERT-S', useMock = false) {
     const records = jsonLines.filter((obj) => obj.type === 'record')
     console.log('🔍 DEBUG: After parsing jsonLines:', {
       totalLines: jsonLines.length,
-      validRecords: records.length
-    });
+      validRecords: records.length,
+    })
 
     console.log(`Received ${records.length} UMAP data points`)
-    
+
     // If we got no valid records, fall back to mock data
     if (records.length === 0) {
-      console.warn('🔍 DEBUG: No valid records received from API, using mock data');
-      return mockUmapData(500);
+      console.warn(
+        '🔍 DEBUG: No valid records received from API, using mock data'
+      )
+      return mockUmapData(500)
     }
-    
+
     return records
   } catch (error) {
     console.error('Error fetching UMAP data:', error)
@@ -322,8 +338,8 @@ function mockUmapData(count = 100) {
     '2022-01-01',
     '2023-01-01',
   ]
-  
-  console.log(`Generating ${count} mock UMAP data points`);
+
+  console.log(`Generating ${count} mock UMAP data points`)
 
   for (let i = 0; i < count; i++) {
     const x = (Math.random() * 2 - 1) * 10
@@ -423,155 +439,156 @@ async function checkJobStatus(jobId) {
  */
 async function getUmapProjection(jobId) {
   try {
-    console.log(`Getting UMAP projection for job ${jobId}`);
-    
-    const url = `${API_BASE_URL}/pathtrack/sequence/umap?job_id=${encodeURIComponent(jobId)}`;
-    console.log(`Sending POST request to: ${url}`);
-    
+    console.log(`Getting UMAP projection for job ${jobId}`)
+
+    const url = `${API_BASE_URL}/pathtrack/sequence/umap?job_id=${encodeURIComponent(
+      jobId
+    )}`
+    console.log(`Sending POST request to: ${url}`)
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': API_KEY
+        'X-API-Key': API_KEY,
       },
-      body: JSON.stringify({})
-    });
-    
+      body: JSON.stringify({}),
+    })
+
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to get UMAP projection: ${response.status} - ${errorText}`);
+      const errorText = await response.text()
+      throw new Error(
+        `Failed to get UMAP projection: ${response.status} - ${errorText}`
+      )
     }
-    
-    const data = await response.json();
-    console.log("UMAP projection response:", data);
-    
+
+    const data = await response.json()
+    console.log('UMAP projection response:', data)
+
+    // --- ADD DETAILED LOGGING ---
+    console.log('DEBUG: Checking coordinates...')
+    console.log('DEBUG: data exists?', !!data)
+    console.log('DEBUG: data.result exists?', !!(data && data.result))
+    console.log(
+      'DEBUG: data.result.coordinates exists?',
+      !!(data && data.result && data.result.coordinates)
+    )
+    if (data && data.result && data.result.coordinates) {
+      console.log(
+        'DEBUG: data.result.coordinates IS an array?',
+        Array.isArray(data.result.coordinates)
+      )
+      console.log(
+        'DEBUG: data.result.coordinates length:',
+        data.result.coordinates.length
+      )
+    }
+    // --- END DETAILED LOGGING ---
+
     // Extract coordinates from the response
     // The API returns coordinates in the result.coordinates array
-    if (data && data.result && data.result.coordinates && 
-        Array.isArray(data.result.coordinates) && 
-        data.result.coordinates.length >= 2) {
-      
-      const [x, y] = data.result.coordinates;
-      console.log(`Extracted UMAP coordinates: (${x}, ${y})`);
-      
+    if (
+      data &&
+      data.result &&
+      data.result.coordinates &&
+      Array.isArray(data.result.coordinates) &&
+      data.result.coordinates.length >= 2
+    ) {
+      const [x, y] = data.result.coordinates
+      console.log(`Extracted UMAP coordinates: (${x}, ${y})`)
+
       return {
         x: x,
         y: y,
         jobId: jobId,
-        rawData: data
-      };
+        rawData: data,
+      }
     } else {
-      console.warn("API response doesn't contain valid coordinates:", data);
+      console.warn("API response doesn't contain valid coordinates:", data)
       // Return placeholder coordinates if not found
       return {
         x: 0,
         y: 0,
         jobId: jobId,
         rawData: data,
-        isPlaceholder: true
-      };
+        isPlaceholder: true,
+      }
     }
   } catch (error) {
-    console.error("Error getting UMAP projection:", error);
-    throw error;
+    console.error('Error getting UMAP projection:', error)
+    throw error
   }
 }
 
 /**
- * Get similar sequences for a job
- * @param {string} jobId - The job ID
- * @param {Object} options - Options for similar sequences query
- * @returns {Promise<Array>} - Array of similar sequences
+ * Get similar sequences for a job ID from the API.
+ * @param {string} jobId - The job ID for the uploaded sequence.
+ * @param {Object} options - Options for the similarity query (e.g., n_results).
+ * @returns {Promise<Object>} - The full API response object containing the results.
  */
 async function getSimilarSequences(jobId, options = {}) {
   try {
-    console.log(`Getting similar sequences for job ${jobId} with options:`, options);
-    
-    // Default options
+    console.log(
+      `API Service: Getting similar sequences for job ${jobId} with options:`,
+      options
+    )
+
+    // Default options (aligning with the direct call in index.md)
     const defaultOptions = {
       n_results: 10,
       min_distance: -1,
       max_year: 0,
-      include_unknown_dates: true
-    };
-    
+      include_unknown_dates: false, // Match the setting used in the direct call
+    }
+
     // Merge with user options
-    const queryOptions = { ...defaultOptions, ...options };
-    
-    // Prepare request - job_id should be in the query string, not the body
-    const url = `${API_BASE_URL}/pathtrack/sequence/similar?job_id=${encodeURIComponent(jobId)}`;
-    
-    console.log(`Sending request to: ${url}`);
-    
+    const queryOptions = { ...defaultOptions, ...options }
+
+    // Prepare request URL with job_id in the query string
+    const url = `${API_BASE_URL}/pathtrack/sequence/similar?job_id=${encodeURIComponent(
+      jobId
+    )}`
+    console.log(`API Service: Sending POST request to: ${url}`)
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': API_KEY
+        'X-API-Key': API_KEY,
       },
+      // Send options in the body as per the direct call structure
       body: JSON.stringify({
         n_results: queryOptions.n_results,
         min_distance: queryOptions.min_distance,
         max_year: queryOptions.max_year,
-        include_unknown_dates: queryOptions.include_unknown_dates
-      })
-    });
-    
+        include_unknown_dates: queryOptions.include_unknown_dates,
+      }),
+    })
+
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to get similar sequences: ${response.status} - ${errorText}`);
+      const errorText = await response.text()
+      console.error(
+        `API Service: Error fetching similar sequences: ${response.status} - ${errorText}`
+      )
+      throw new Error(
+        `Failed to get similar sequences: ${response.status} - ${errorText}`
+      )
     }
-    
-    const data = await response.json();
-    console.log("Similar sequences response:", data);
-    
-    // Check if the response has the expected structure
-    if (!data || !data.result) {
-      console.warn("API response doesn't contain result field, returning empty array");
-      return [];
-    }
-    
-    // The API returns the similar sequences in the 'result' field
-    const similarSequences = Array.isArray(data.result) ? data.result : [];
-    
-    // Map the API response to our expected format
-    return similarSequences.map(seq => {
-      // Generate deterministic coordinates based on the sequence ID hash
-      // This ensures the same sequence always gets the same coordinates
-      const hashCode = (str) => {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-          hash = ((hash << 5) - hash) + str.charCodeAt(i);
-          hash |= 0; // Convert to 32bit integer
-        }
-        return hash;
-      };
-      
-      // Generate deterministic coordinates based on the sequence ID
-      const hash = hashCode(seq.id);
-      const x = (hash % 1000) / 100 - 5; // Range from -5 to 5
-      const y = ((hash / 1000) % 1000) / 100 - 5; // Different range from -5 to 5
-      
-      // Always use deterministic coordinates without caching
-      const coordinates = [x, y];
-      console.log(`Generated deterministic coordinates for sequence ${seq.id}: [${coordinates[0]}, ${coordinates[1]}]`);
-      
-      return {
-        sequence_hash: seq.id,
-        id: seq.id,
-        accession: seq.metadata?.accessions?.[0] || 'Unknown',
-        first_country: seq.metadata?.first_country || 'Unknown',
-        first_date: seq.metadata?.first_year ? `${seq.metadata.first_year}` : 'Unknown',
-        coordinates: coordinates,
-        similarity: seq.similarity || 0,
-        distance: seq.distance || 0,
-        metadata: seq.metadata || {}
-      };
-    });
+
+    // Parse the full JSON response
+    const data = await response.json()
+    console.log('API Service: Similar sequences raw response:', data)
+
+    // Return the full response object as received from the API
+    // The calling function (handleJobCompletion) will handle the 'result' field
+    return data
   } catch (error) {
-    console.error("Error getting similar sequences:", error);
-    // Return empty array instead of throwing to make the code more robust
-    return [];
+    console.error('API Service: Error in getSimilarSequences:', error)
+    // Return a default error structure or null to indicate failure
+    // Returning null might be simpler for the caller to check
+    return null
+    // Alternatively, re-throw the error if the caller should handle it:
+    // throw error;
   }
 }
 
@@ -620,21 +637,21 @@ async function getEmbedding(jobId) {
 async function fetchAllSequences() {
   try {
     if (cachedSequences) {
-      console.log("Using cached sequences");
-      return cachedSequences;
+      console.log('Using cached sequences')
+      return cachedSequences
     }
-    
-    console.log("Fetching all sequences for similarity search");
-    const sequences = await fetchUmapData();
-    
+
+    console.log('Fetching all sequences for similarity search')
+    const sequences = await fetchUmapData()
+
     // Cache the sequences
-    cachedSequences = sequences;
-    console.log(`Cached ${sequences.length} sequences for similarity search`);
-    
-    return sequences;
+    cachedSequences = sequences
+    console.log(`Cached ${sequences.length} sequences for similarity search`)
+
+    return sequences
   } catch (error) {
-    console.error("Error fetching all sequences:", error);
-    throw error;
+    console.error('Error fetching all sequences:', error)
+    throw error
   }
 }
 
@@ -648,32 +665,36 @@ async function fetchAllSequences() {
  */
 async function findSimilarSequencesForJob(jobId, options = {}) {
   try {
-    console.log(`Finding similar sequences for job: ${jobId}`);
-    
+    console.log(`Finding similar sequences for job: ${jobId}`)
+
     // Default options
     const defaultOptions = {
       limit: 10,
-      threshold: 0.7
-    };
-    
+      threshold: 0.7,
+    }
+
     // Merge with user options
-    const searchOptions = { ...defaultOptions, ...options };
-    
+    const searchOptions = { ...defaultOptions, ...options }
+
     // Get embedding for the job
-    const embeddingData = await getEmbedding(jobId);
-    const userEmbedding = embeddingData.embedding;
-    
+    const embeddingData = await getEmbedding(jobId)
+    const userEmbedding = embeddingData.embedding
+
     // Make sure we have all sequences
-    const allSequences = await fetchAllSequences();
-    
+    const allSequences = await fetchAllSequences()
+
     // Find similar sequences
-    const similarSequences = await findSimilarSequences(userEmbedding, allSequences, searchOptions);
-    
-    console.log(`Found ${similarSequences.length} similar sequences`);
-    return similarSequences;
+    const similarSequences = await findSimilarSequences(
+      userEmbedding,
+      allSequences,
+      searchOptions
+    )
+
+    console.log(`Found ${similarSequences.length} similar sequences`)
+    return similarSequences
   } catch (error) {
-    console.error("Error finding similar sequences for job:", error);
-    throw error;
+    console.error('Error finding similar sequences for job:', error)
+    throw error
   }
 }
 
@@ -686,29 +707,33 @@ async function findSimilarSequencesForJob(jobId, options = {}) {
  */
 async function findSimilarSequences(embedding, sequences, options) {
   try {
-    console.log(`Finding similar sequences among ${sequences.length} sequences`);
-    
+    console.log(`Finding similar sequences among ${sequences.length} sequences`)
+
     // Get UMAP projection for the embedding
-    const umapProjection = await getUmapProjectionForEmbedding(embedding);
-    
+    const umapProjection = await getUmapProjectionForEmbedding(embedding)
+
     // Calculate similarity for each sequence
     const similarSequences = sequences
-      .map(seq => {
+      .map((seq) => {
         // Skip sequences without coordinates
-        if (!seq.coordinates || !Array.isArray(seq.coordinates) || seq.coordinates.length < 2) {
-          return null;
+        if (
+          !seq.coordinates ||
+          !Array.isArray(seq.coordinates) ||
+          seq.coordinates.length < 2
+        ) {
+          return null
         }
-        
+
         // Calculate Euclidean distance in UMAP space
         const distance = calculateEuclideanDistance(
           [umapProjection.x, umapProjection.y],
           [seq.coordinates[0], seq.coordinates[1]]
-        );
-        
+        )
+
         // Convert distance to similarity (inverse relationship)
         // Normalize to 0-1 range where 1 is most similar
-        const similarity = 1 / (1 + distance);
-        
+        const similarity = 1 / (1 + distance)
+
         return {
           id: seq.sequence_hash,
           x: seq.coordinates[0],
@@ -716,17 +741,17 @@ async function findSimilarSequences(embedding, sequences, options) {
           similarity,
           accession: seq.accession,
           first_country: seq.first_country,
-          first_date: seq.first_date
-        };
+          first_date: seq.first_date,
+        }
       })
-      .filter(seq => seq !== null && seq.similarity >= options.threshold)
+      .filter((seq) => seq !== null && seq.similarity >= options.threshold)
       .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, options.limit);
-    
-    return similarSequences;
+      .slice(0, options.limit)
+
+    return similarSequences
   } catch (error) {
-    console.error("Error finding similar sequences:", error);
-    throw error;
+    console.error('Error finding similar sequences:', error)
+    throw error
   }
 }
 
@@ -738,12 +763,12 @@ async function findSimilarSequences(embedding, sequences, options) {
  */
 function calculateEuclideanDistance(point1, point2) {
   const squaredDiffs = point1.map((coord, i) => {
-    const diff = coord - point2[i];
-    return diff * diff;
-  });
-  
-  const sumSquaredDiffs = squaredDiffs.reduce((sum, diff) => sum + diff, 0);
-  return Math.sqrt(sumSquaredDiffs);
+    const diff = coord - point2[i]
+    return diff * diff
+  })
+
+  const sumSquaredDiffs = squaredDiffs.reduce((sum, diff) => sum + diff, 0)
+  return Math.sqrt(sumSquaredDiffs)
 }
 
 /**
@@ -755,12 +780,12 @@ async function getUmapProjectionForEmbedding(embedding) {
   // This is a mock implementation
   // In a real implementation, you would send the embedding to the API
   // and get back the UMAP projection
-  
+
   // For now, we'll just return random coordinates
   return {
     x: Math.random() * 10 - 5,
-    y: Math.random() * 10 - 5
-  };
+    y: Math.random() * 10 - 5,
+  }
 }
 
 /**
@@ -770,132 +795,151 @@ async function getUmapProjectionForEmbedding(embedding) {
  * @param {Array} similarSequences - Array of similar sequences
  * @param {Object} options - Visualization options
  */
-function visualizeSimilarityConnections(scatterComponent, userSequence, similarSequences, options = {}) {
-  console.log('Visualizing similarity connections');
-  
+function visualizeSimilarityConnections(
+  scatterComponent,
+  userSequence,
+  similarSequences,
+  options = {}
+) {
+  console.log('Visualizing similarity connections')
+
   try {
     // Default options
     const defaultOptions = {
       lineColor: 'rgba(255, 0, 0, 0.3)',
       lineWidth: 1,
       minSimilarity: 0,
-      maxConnections: 10
-    };
-    
+      maxConnections: 10,
+    }
+
     // Merge with user options
-    const visualOptions = { ...defaultOptions, ...options };
-    
+    const visualOptions = { ...defaultOptions, ...options }
+
     // Check if the component is valid
     if (!scatterComponent) {
-      console.error('Invalid scatter component');
-      return;
+      console.error('Invalid scatter component')
+      return
     }
-    
+
     // Get the SVG element - handle different component implementations
-    let svg;
+    let svg
     if (typeof scatterComponent.getSvg === 'function') {
       // If the component has a getSvg method, use it
-      svg = scatterComponent.getSvg();
+      svg = scatterComponent.getSvg()
     } else if (scatterComponent.svg) {
       // If the component has an svg property, use it
-      svg = scatterComponent.svg;
+      svg = scatterComponent.svg
     } else {
       // Try to find the SVG element within the component's container
-      const containerId = scatterComponent.containerId || scatterComponent.id;
+      const containerId = scatterComponent.containerId || scatterComponent.id
       if (containerId) {
-        const container = document.getElementById(containerId);
+        const container = document.getElementById(containerId)
         if (container) {
-          svg = d3.select(container).select('svg');
+          svg = d3.select(container).select('svg')
         }
       }
-      
+
       // If we still don't have an SVG, try one more approach
       if (!svg || svg.empty()) {
         // Try to get the container element directly
-        const container = scatterComponent.container || 
-                         (scatterComponent.element ? d3.select(scatterComponent.element) : null);
-        
+        const container =
+          scatterComponent.container ||
+          (scatterComponent.element
+            ? d3.select(scatterComponent.element)
+            : null)
+
         if (container) {
-          svg = container.select('svg');
+          svg = container.select('svg')
         }
       }
     }
-    
+
     // If we still couldn't find the SVG, log an error and return
     if (!svg || (svg.empty && svg.empty())) {
-      console.error('Could not find SVG element in scatter component');
-      return;
+      console.error('Could not find SVG element in scatter component')
+      return
     }
-    
+
     // Check if we have valid user sequence and similar sequences
-    if (!userSequence || !similarSequences || !Array.isArray(similarSequences) || similarSequences.length === 0) {
-      console.warn('No valid sequences to visualize connections');
-      return;
+    if (
+      !userSequence ||
+      !similarSequences ||
+      !Array.isArray(similarSequences) ||
+      similarSequences.length === 0
+    ) {
+      console.warn('No valid sequences to visualize connections')
+      return
     }
-    
+
     // Remove any existing connections
-    svg.selectAll('.similarity-connection').remove();
-    
+    svg.selectAll('.similarity-connection').remove()
+
     // Get the scales from the component
-    let xScale, yScale;
-    
+    let xScale, yScale
+
     if (typeof scatterComponent.getScales === 'function') {
-      const scales = scatterComponent.getScales();
-      xScale = scales.x;
-      yScale = scales.y;
+      const scales = scatterComponent.getScales()
+      xScale = scales.x
+      yScale = scales.y
     } else {
       // Try to access scales directly
-      xScale = scatterComponent.xScale || scatterComponent.x;
-      yScale = scatterComponent.yScale || scatterComponent.y;
+      xScale = scatterComponent.xScale || scatterComponent.x
+      yScale = scatterComponent.yScale || scatterComponent.y
     }
-    
+
     // If we still don't have scales, try to recreate them
     if (!xScale || !yScale) {
-      console.warn('Could not find scales in scatter component, attempting to recreate');
-      
+      console.warn(
+        'Could not find scales in scatter component, attempting to recreate'
+      )
+
       // Get the dimensions of the SVG
-      const width = parseInt(svg.attr('width'), 10) || 500;
-      const height = parseInt(svg.attr('height'), 10) || 400;
-      
+      const width = parseInt(svg.attr('width'), 10) || 500
+      const height = parseInt(svg.attr('height'), 10) || 400
+
       // Create simple scales based on the data
-      const allPoints = [userSequence, ...similarSequences];
-      const xExtent = d3.extent(allPoints, d => d.X || d.x || 0);
-      const yExtent = d3.extent(allPoints, d => d.Y || d.y || 0);
-      
-      xScale = d3.scaleLinear()
+      const allPoints = [userSequence, ...similarSequences]
+      const xExtent = d3.extent(allPoints, (d) => d.X || d.x || 0)
+      const yExtent = d3.extent(allPoints, (d) => d.Y || d.y || 0)
+
+      xScale = d3
+        .scaleLinear()
         .domain(xExtent)
-        .range([50, width - 50]);
-      
-      yScale = d3.scaleLinear()
+        .range([50, width - 50])
+
+      yScale = d3
+        .scaleLinear()
         .domain(yExtent)
-        .range([height - 50, 50]);
+        .range([height - 50, 50])
     }
-    
+
     // Filter and sort similar sequences
     const filteredSequences = similarSequences
-      .filter(seq => seq.similarity >= visualOptions.minSimilarity)
+      .filter((seq) => seq.similarity >= visualOptions.minSimilarity)
       .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, visualOptions.maxConnections);
-    
+      .slice(0, visualOptions.maxConnections)
+
     // Get user sequence coordinates
-    const userX = xScale(userSequence.X || userSequence.x || 0);
-    const userY = yScale(userSequence.Y || userSequence.y || 0);
-    
+    const userX = xScale(userSequence.X || userSequence.x || 0)
+    const userY = yScale(userSequence.Y || userSequence.y || 0)
+
     // Create a group for the connections
-    const connectionsGroup = svg.append('g')
-      .attr('class', 'similarity-connections');
-    
+    const connectionsGroup = svg
+      .append('g')
+      .attr('class', 'similarity-connections')
+
     // Draw connections
-    filteredSequences.forEach(seq => {
+    filteredSequences.forEach((seq) => {
       // Get sequence coordinates
-      const seqX = xScale(seq.X || seq.x || 0);
-      const seqY = yScale(seq.Y || seq.y || 0);
-      
+      const seqX = xScale(seq.X || seq.x || 0)
+      const seqY = yScale(seq.Y || seq.y || 0)
+
       // Calculate line opacity based on similarity
-      const opacity = seq.similarity || 0.5;
-      
+      const opacity = seq.similarity || 0.5
+
       // Draw the connection line
-      connectionsGroup.append('line')
+      connectionsGroup
+        .append('line')
         .attr('class', 'similarity-connection')
         .attr('x1', userX)
         .attr('y1', userY)
@@ -906,14 +950,14 @@ function visualizeSimilarityConnections(scatterComponent, userSequence, similarS
         .attr('stroke-opacity', opacity)
         .attr('data-source', userSequence.id)
         .attr('data-target', seq.id)
-        .attr('data-similarity', seq.similarity);
-    });
-    
-    console.log(`Drew ${filteredSequences.length} similarity connections`);
-    return connectionsGroup;
+        .attr('data-similarity', seq.similarity)
+    })
+
+    console.log(`Drew ${filteredSequences.length} similarity connections`)
+    return connectionsGroup
   } catch (error) {
-    console.error('Error visualizing similarity connections:', error);
-    return null;
+    console.error('Error visualizing similarity connections:', error)
+    return null
   }
 }
 
@@ -925,34 +969,35 @@ function visualizeSimilarityConnections(scatterComponent, userSequence, similarS
 function toggleSimilarityConnections(scatterComponent, show = true) {
   try {
     // Get the SVG element - handle different component implementations
-    let svg;
+    let svg
     if (typeof scatterComponent.getSvg === 'function') {
-      svg = scatterComponent.getSvg();
+      svg = scatterComponent.getSvg()
     } else if (scatterComponent.svg) {
-      svg = scatterComponent.svg;
+      svg = scatterComponent.svg
     } else {
-      const containerId = scatterComponent.containerId || scatterComponent.id;
+      const containerId = scatterComponent.containerId || scatterComponent.id
       if (containerId) {
-        const container = document.getElementById(containerId);
+        const container = document.getElementById(containerId)
         if (container) {
-          svg = d3.select(container).select('svg');
+          svg = d3.select(container).select('svg')
         }
       }
     }
-    
+
     if (!svg || (svg.empty && svg.empty())) {
-      console.error('Could not find SVG element in scatter component');
-      return;
+      console.error('Could not find SVG element in scatter component')
+      return
     }
-    
+
     // Toggle visibility of all similarity connections
-    svg.selectAll('.similarity-connection')
+    svg
+      .selectAll('.similarity-connection')
       .style('visibility', show ? 'visible' : 'hidden')
-      .style('opacity', show ? 0.7 : 0);
-    
-    console.log(`${show ? 'Showed' : 'Hid'} similarity connections`);
+      .style('opacity', show ? 0.7 : 0)
+
+    console.log(`${show ? 'Showed' : 'Hid'} similarity connections`)
   } catch (error) {
-    console.error('Error toggling similarity connections:', error);
+    console.error('Error toggling similarity connections:', error)
   }
 }
 
@@ -963,51 +1008,58 @@ function toggleSimilarityConnections(scatterComponent, show = true) {
  */
 function highlightSimilarSequence(sequenceId, highlight = true) {
   try {
-    console.log(`${highlight ? 'Highlighting' : 'Unhighlighting'} sequence: ${sequenceId}`);
-    
+    console.log(
+      `${highlight ? 'Highlighting' : 'Unhighlighting'} sequence: ${sequenceId}`
+    )
+
     // Highlight in scatter plot
-    const scatterPoints = d3.selectAll('.scatter-point');
-    scatterPoints.filter(d => d && d.id === sequenceId)
+    const scatterPoints = d3.selectAll('.scatter-point')
+    scatterPoints
+      .filter((d) => d && d.id === sequenceId)
       .transition()
       .duration(200)
       .attr('r', highlight ? 8 : 5)
       .style('fill', highlight ? '#ff0000' : null)
       .style('stroke', highlight ? '#000000' : null)
-      .style('stroke-width', highlight ? 2 : 1);
-    
+      .style('stroke-width', highlight ? 2 : 1)
+
     // Highlight in map
-    const mapPoints = d3.selectAll('.map-point');
-    mapPoints.filter(d => d && d.id === sequenceId)
+    const mapPoints = d3.selectAll('.map-point')
+    mapPoints
+      .filter((d) => d && d.id === sequenceId)
       .transition()
       .duration(200)
       .attr('r', highlight ? 8 : 5)
       .style('fill', highlight ? '#ff0000' : null)
       .style('stroke', highlight ? '#000000' : null)
-      .style('stroke-width', highlight ? 2 : 1);
-    
+      .style('stroke-width', highlight ? 2 : 1)
+
     // Highlight connection lines - safely check for data structure
-    const connectionLines = d3.selectAll('.similarity-connection');
-    connectionLines.filter(function(d) {
-      // Safely check if this line connects to our target sequence
-      if (!d) return false;
-      
-      // Different possible data structures for connection lines
-      if (d.target && d.target.id === sequenceId) return true;
-      if (d.targetId === sequenceId) return true;
-      if (d.id === sequenceId) return true;
-      
-      // For debugging
-      if (d.target) console.log("Connection line target:", d.target);
-      
-      return false;
-    })
-    .transition()
-    .duration(200)
-    .style('stroke-width', highlight ? 3 : 1)
-    .style('stroke-opacity', highlight ? 0.8 : 0.3);
-    
+    const connectionLines = d3.selectAll('.similarity-connection')
+    connectionLines
+      .filter(function (d) {
+        // Safely check if this line connects to our target sequence
+        if (!d) return false
+
+        // Different possible data structures for connection lines
+        if (d.target && d.target.id === sequenceId) return true
+        if (d.targetId === sequenceId) return true
+        if (d.id === sequenceId) return true
+
+        // For debugging
+        if (d.target) console.log('Connection line target:', d.target)
+
+        return false
+      })
+      .transition()
+      .duration(200)
+      .style('stroke-width', highlight ? 3 : 1)
+      .style('stroke-opacity', highlight ? 0.8 : 0.3)
   } catch (error) {
-    console.error(`Error ${highlight ? 'highlighting' : 'unhighlighting'} sequence:`, error);
+    console.error(
+      `Error ${highlight ? 'highlighting' : 'unhighlighting'} sequence:`,
+      error
+    )
   }
 }
 
@@ -1027,5 +1079,5 @@ export {
   findSimilarSequences,
   visualizeSimilarityConnections,
   highlightSimilarSequence,
-  toggleSimilarityConnections
+  toggleSimilarityConnections,
 }
