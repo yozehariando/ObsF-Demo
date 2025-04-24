@@ -495,8 +495,8 @@ export function createUmapScatterPlot(containerId, data = [], options = {}) {
       pointData.similarity != null
         ? (pointData.similarity * 100).toFixed(1) + '%'
         : 'N/A'
-    const distance =
-      pointData.distance != null ? pointData.distance.toFixed(3) : 'N/A'
+    // const distance =
+    //   pointData.distance != null ? pointData.distance.toFixed(3) : 'N/A'
 
     let title = 'Similar Sequence'
     if (pointData.isUserSequence) title = 'Your Sequence'
@@ -506,7 +506,6 @@ export function createUmapScatterPlot(containerId, data = [], options = {}) {
       <h4>${title}</h4>
       <p><strong>Label:</strong> ${label}</p>
       <p><strong>Similarity:</strong> ${similarity}</p>
-      <p><strong>Distance:</strong> ${distance}</p>
       <p><strong>Country:</strong> ${country}</p>
       <p><strong>Year:</strong> ${year}</p>
       <p><strong>Host:</strong> ${host}</p>

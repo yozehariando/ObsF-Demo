@@ -30,7 +30,7 @@ toc: false
       <!-- Added Empty State Message -->
       <div class="empty-state-message flex flex-col items-center justify-center h-full">
         <p class="text-center text-gray-500 mb-4">Upload a sequence to view its relationship with similar sequences in the database.</p>
-  </div>
+      </div>
     </div>
   </div>
 </div>
@@ -38,37 +38,39 @@ toc: false
 <!-- Details Section - Full Width Container -->
 <div>
   <!-- Inner Grid for Map and Details -->
-  <div class="grid" style="display: grid; grid-template-columns: 66.666% 33.333%; gap: 1rem;">
-    <!-- Reference Map - Takes 8/12 (66.666%) -->
-    <div class="card p-4">
-      <h2 class="mb-4">Reference Map (Contextual)</h2> <!-- Renamed -->
-      <div id="map-container" style="width: 100%; position: relative; overflow: hidden;">
-        <!-- Added Empty State Message -->
-        <div class="empty-state-message flex flex-col items-center justify-center h-full" style="min-height: 550px;">
-          <p class="text-center text-gray-500 mb-4">Upload a sequence to view the geographic distribution of similar sequences.</p>
+  <div class="grid" style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;">
+    <!-- Left Column -->
+    <div class="left-map-column" style="display: flex; flex-direction: column; gap: 1rem;"> 
+        <!-- Reference Map Card -->
+        <div class="card p-4">
+          <h2 class="mb-4">Reference Map (Contextual)</h2> <!-- Renamed -->
+          <div id="map-container" style="width: 100%; position: relative; overflow: hidden;">
+            <!-- Added Empty State Message -->
+            <div class="empty-state-message flex flex-col items-center justify-center h-full" style="min-height: 550px;">
+              <p class="text-center text-gray-500 mb-4">Upload a sequence to view the geographic distribution of similar sequences.</p>
+            </div>
+          </div>
         </div>
-      </div>
+        <!-- Geo Map Card -->
+        <div class="card p-4"> 
+          <h2 class="mb-4">Top 10 Similar Sequences - Geographic Distribution</h2> <!-- Renamed -->
+          <div id="user-geo-container" style="width: 100%; height: 400px; position: relative;">
+            <!-- Added Empty State Message -->
+            <div class="empty-state-message flex flex-col items-center justify-center h-full">
+              <p class="text-center text-gray-500 mb-4">Upload a sequence to view the specific locations of the top 10 most similar sequences.</p>
+            </div>
+          </div>
+        </div>
     </div>
-    <!-- Details Panel - Takes 4/12 (33.333%) -->
-    <div class="card p-4">
+    <!-- Right Column -->
+    <div class="card p-4"> 
       <div class="flex justify-between items-center cursor-pointer" id="details-toggle">
         <h2 class="mb-0">Top 10 Similar Sequences</h2> <!-- Renamed -->
-        <span class="toggle-icon">▼</span>
+        <!-- <span class="toggle-icon">▼</span> -->
       </div>
       <div id="details-panel" class="mt-4 p-4 border rounded" style="overflow-y: auto;">
         <p class="text-center text-gray-500">Upload a sequence to view details of the most similar matches.</p> <!-- Updated Text -->
       </div>
-    </div>
-  </div>
-</div>
-
-<!-- Geographic Distribution Section -->
-<div class="card p-4 mb-4">
-  <h2 class="mb-4">Top 10 Similar Sequences - Geographic Distribution</h2> <!-- Renamed -->
-  <div id="user-geo-container" style="width: 100%; height: 400px; position: relative;">
-    <!-- Added Empty State Message -->
-    <div class="empty-state-message flex flex-col items-center justify-center h-full">
-      <p class="text-center text-gray-500 mb-4">Upload a sequence to view the specific locations of the top 10 most similar sequences.</p>
     </div>
   </div>
 </div>
@@ -85,29 +87,6 @@ toc: false
 
 .card:hover {
   box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-/* Details panel transitions */
-#details-panel {
-  transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
-  max-height: 500px;
-  opacity: 1;
-}
-
-#details-panel.collapsed {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.toggle-icon {
-  transition: transform 0.3s ease;
-}
-
-.collapsed .toggle-icon {
-  transform: rotate(-90deg);
 }
 
 /* Visualization containers */
@@ -153,25 +132,12 @@ toc: false
 #details-panel {
   min-height: 530px; /* Ensures minimum height for details */
 }
-</style>
 
-```js
-// Add collapsible functionality to details panel
-const detailsToggle = document.getElementById('details-toggle');
-const detailsPanel = document.getElementById('details-panel');
-
-if (detailsToggle && detailsPanel) {
-  detailsToggle.addEventListener('click', () => {
-    detailsPanel.classList.toggle('collapsed');
-    const icon = detailsToggle.querySelector('.toggle-icon');
-    if (icon) {
-      icon.style.transform = detailsPanel.classList.contains('collapsed') 
-        ? 'rotate(-90deg)' 
-        : 'rotate(0deg)';
-    }
-  });
+/* ADD this rule to override card margin in the left column */
+.left-map-column .card {
+  margin: 0; /* Remove default top/bottom margin */
 }
-```
+</style>
 
 ```js
 import * as d3 from "d3";
@@ -317,67 +283,6 @@ const state = {
   similarSequences: [],
   userGeoMap: null
 };
-
-// Add a global cache for UMAP data
-// let umapDataCache = null;
-
-/**
- * Debug utility to check if specific accession numbers exist in the UMAP data cache
- * @param {Array} accessionNumbers - Array of accession numbers to check
- */
-// function checkAccessionExistence(accessionNumbers) {
-//   if (!umapDataCache || umapDataCache.length === 0) {
-//     console.log("❌ CHECK: umapDataCache is empty or null");
-//     return;
-//   }
-  
-//   console.log(`🔍 CHECK: Checking ${accessionNumbers.length} accession numbers against ${umapDataCache.length} cache items`);
-  
-//   // For each accession number, check if it exists in the cache
-//   accessionNumbers.forEach(accessionNumber => {
-//     // Direct match
-//     const directMatch = umapDataCache.find(item => item.accession === accessionNumber);
-    
-//     // Case-insensitive match
-//     const caseInsensitiveMatch = !directMatch ? umapDataCache.find(item => 
-//       item.accession && item.accession.toLowerCase() === accessionNumber.toLowerCase()
-//     ) : null;
-    
-//     // Base match (without version number)
-//     const baseAccession = accessionNumber.split('.')[0];
-//     const baseMatch = (!directMatch && !caseInsensitiveMatch) ? umapDataCache.find(item => {
-//       if (!item.accession) return false;
-//       const itemBase = item.accession.split('.')[0];
-//       return itemBase === baseAccession;
-//     }) : null;
-    
-//     // Prefix match
-//     const prefixMatch = (!directMatch && !caseInsensitiveMatch && !baseMatch) ? umapDataCache.find(item => {
-//       if (!item.accession) return false;
-//       return item.accession.startsWith(baseAccession) || baseAccession.startsWith(item.accession);
-//     }) : null;
-    
-//     console.log(`🔍 CHECK: Accession "${accessionNumber}":`);
-//     console.log(`  - Direct match: ${directMatch ? 'YES' : 'NO'}`);
-//     console.log(`  - Case-insensitive match: ${caseInsensitiveMatch ? 'YES (' + caseInsensitiveMatch.accession + ')' : 'NO'}`);
-//     console.log(`  - Base match (without version): ${baseMatch ? 'YES (' + baseMatch.accession + ')' : 'NO'}`);
-//     console.log(`  - Prefix match: ${prefixMatch ? 'YES (' + prefixMatch.accession + ')' : 'NO'}`);
-    
-//     if (directMatch || caseInsensitiveMatch || baseMatch || prefixMatch) {
-//       const match = directMatch || caseInsensitiveMatch || baseMatch || prefixMatch;
-//       console.log(`  - Found match: ${match.accession}`);
-//       console.log(`  - Has coordinates array: ${!!(match.coordinates && Array.isArray(match.coordinates))}`);
-//       console.log(`  - Has x,y properties: ${!!(typeof match.x === 'number' && typeof match.y === 'number')}`);
-      
-//       // Log coordinates if available
-//       if (match.coordinates && Array.isArray(match.coordinates)) {
-//         console.log(`  - Coordinates: [${match.coordinates.join(', ')}]`);
-//       } else if (typeof match.x === 'number' && typeof match.y === 'number') {
-//         console.log(`  - X,Y properties: (${match.x}, ${match.y})`);
-//       }
-//     }
-//   });
-// }
 
 /**
  * Handle job completion: Fetch user projection, fetch N=100 similar sequences,
@@ -567,22 +472,13 @@ async function handleJobCompletion(jobId, jobData) {
        const emptyState = geoContainer?.querySelector('.empty-state-message');
        if (emptyState) emptyState.style.display = 'none';
 
-       // Prepare data for updateMap call (user sequence needs placeholder geo)
-       const userSequenceWithGeo = {
-           ...userSequence,
-           metadata: { lat_lon: top10SimilarRaw[0]?.metadata?.lat_lon }
-       };
-
-       // --- AWAIT the component creation ---
        state.userGeoMap = await createUserGeoMap(geoContainerId, {
          // Pass options if needed
        });
-       // --- END CHANGE ---
-
-       // --- Call updateMap AFTER component is created ---
+       
        if (state.userGeoMap && typeof state.userGeoMap.updateMap === 'function') {
            console.log("Calling userGeoMap.updateMap with initial data...");
-           state.userGeoMap.updateMap(userSequenceWithGeo, top10SimilarRaw); // Pass data here
+           state.userGeoMap.updateMap(userSequence, top10SimilarRaw); // Pass original userSequence
       } else {
            console.error("Failed to initialize userGeoMap component or updateMap is missing.");
       }
@@ -590,13 +486,8 @@ async function handleJobCompletion(jobId, jobData) {
   } else {
         // Update existing map
         console.log("Updating User Geo Map (userGeoMap) with Top 10 raw...");
-        const userSequenceWithGeo = {
-            ...userSequence,
-            metadata: { lat_lon: top10SimilarRaw[0]?.metadata?.lat_lon }
-        };
-        // Ensure updateMap exists before calling
         if (typeof state.userGeoMap.updateMap === 'function') {
-            state.userGeoMap.updateMap(userSequenceWithGeo, top10SimilarRaw);
+            state.userGeoMap.updateMap(userSequence, top10SimilarRaw); // Pass original userSequence
   } else {
              console.error("Cannot update userGeoMap: updateMap method is missing.");
         }
@@ -689,9 +580,14 @@ function addOrUpdateInfoPanel(containerId, sequences) {
     console.log("Added/Updated info panel for UMAP.");
 }
 
+// Make sure this helper function exists before updateDetailsWithSimilarSequences
+function getSimilarityColor(similarity) {
+  if (similarity >= 0.9) return 'high';
+  if (similarity >= 0.7) return 'medium';
+  return 'low';
+}
 
 // Function to update the details panel with similar sequences
-// Needs update to show isolation_source if available in metadata
 function updateDetailsWithSimilarSequences(userSequence, similarSequences) {
   const detailsPanel = document.getElementById('details-panel');
   if (!detailsPanel) return;
@@ -704,7 +600,6 @@ function updateDetailsWithSimilarSequences(userSequence, similarSequences) {
   // --- User Sequence Header ---
   const userHeader = document.createElement('div');
   userHeader.className = 'details-header';
-  // Add clear highlights button only if there are sequences to highlight
   const clearButtonHtml = similarSequences && similarSequences.length > 0
      ? `<button id="clear-highlights" class="btn btn-sm btn-outline-secondary" title="Clear selection highlights">Clear</button>`
      : '';
@@ -712,19 +607,17 @@ function updateDetailsWithSimilarSequences(userSequence, similarSequences) {
   detailsPanel.appendChild(userHeader);
 
   const userInfo = document.createElement('div');
-  userInfo.className = 'sequence-info user-sequence';
+  userInfo.className = 'user-sequence';
   userInfo.innerHTML = `
     <div><strong>ID:</strong> ${userSequence?.id || 'N/A'}</div>
     <div><strong>Label:</strong> ${userSequence?.label || 'Your Sequence'}</div>
-    <!-- Add coordinates or other user-specific info if desired -->
-    <!-- <div><strong>Coords:</strong> (${userSequence?.x?.toFixed(2)}, ${userSequence?.y?.toFixed(2)})</div> -->
   `;
   detailsPanel.appendChild(userInfo);
 
   // --- Similar Sequences Section ---
   const similarHeader = document.createElement('div');
   similarHeader.className = 'details-header';
-  similarHeader.innerHTML = `<h3>Top ${similarSequences?.length || 0} Similar Sequences</h3>`; // Dynamic count
+  similarHeader.innerHTML = `<h3>Top ${similarSequences?.length || 0} Similar Sequences</h3>`;
   detailsPanel.appendChild(similarHeader);
 
   if (!similarSequences || similarSequences.length === 0) {
@@ -732,13 +625,10 @@ function updateDetailsWithSimilarSequences(userSequence, similarSequences) {
     noResults.className = 'no-results';
     noResults.textContent = userSequence ? 'No similar sequences found or none had coordinates.' : 'Upload a sequence first.';
     detailsPanel.appendChild(noResults);
-    return; // Stop here if no similar sequences
+    return;
   }
 
-  // Filter out sequences without IDs (shouldn't happen with new logic, but safety first)
   const validSequences = similarSequences.filter(seq => seq.id);
-
-  // Sort by similarity (highest first) - assuming API already sorted, but double-check
   const sortedSequences = [...validSequences].sort((a, b) =>
     (b.similarity || 0) - (a.similarity || 0)
   );
@@ -748,57 +638,63 @@ function updateDetailsWithSimilarSequences(userSequence, similarSequences) {
 
   sortedSequences.forEach(seq => {
     const similarity = seq.similarity || 0;
-    // const similarityClass = getSimilarityColor(similarity); // Color classes maybe removed if styling changes
+    const similarityLevel = getSimilarityColor(similarity); // Determine level (high, medium, low)
+    const similarityClass = `similarity-${similarityLevel}`; // e.g., similarity-high
 
     const sequenceLabel = seq.label || seq.accession || seq.id || 'Unknown Sequence';
     const metadata = seq.metadata || {};
     const country = metadata.country || metadata.first_country || 'N/A';
     const year = metadata.first_year || (metadata.years && metadata.years[0]) || 'N/A';
     const host = metadata.host || 'N/A';
-    const distance = seq.distance !== undefined ? seq.distance.toFixed(3) : 'N/A';
-    const isolationSource = metadata.isolation_source || 'N/A'; // <-- Get isolation source
+    // const distance = seq.distance !== undefined ? seq.distance.toFixed(3) : 'N/A';
+    const isolationSource = metadata.isolation_source || 'N/A';
 
     const seqItem = document.createElement('div');
-    // seqItem.className = `similar-sequence-item similarity-${similarityClass}`; // Use base class
-    seqItem.className = `similar-sequence-item`; // Simplified class name
-    seqItem.dataset.id = seq.id; // Use the sequence ID for linking
+    // Add the base class AND the similarity level class
+    seqItem.className = `similar-sequence-item ${similarityClass}`; 
+    seqItem.dataset.id = seq.id;
+    // Optional: Keep the data attribute if needed elsewhere, though class is primary now
+    seqItem.dataset.similarityLevel = similarityLevel; 
+
+    // Set the CSS variable for border color persistence on hover/highlight
+    let borderColor = '#eee'; // Default
+    if (similarityLevel === 'high') borderColor = '#4CAF50';
+    else if (similarityLevel === 'medium') borderColor = '#FFC107';
+    else if (similarityLevel === 'low') borderColor = '#F44336';
+    seqItem.style.setProperty('--similarity-border-color', borderColor);
 
     seqItem.innerHTML = `
       <div class="sequence-content">
         <div class="sequence-name" title="ID: ${seq.id}">${sequenceLabel}</div>
         <div class="sequence-metadata">
           <div class="metadata-row" title="Similarity Score"><strong>Sim:</strong> ${(similarity * 100).toFixed(1)}%</div>
-          <div class="metadata-row" title="Distance Metric"><strong>Dist:</strong> ${distance}</div>
           <div class="metadata-row" title="Country"><strong>Country:</strong> ${country}</div>
           <div class="metadata-row" title="Year"><strong>Year:</strong> ${year}</div>
           <div class="metadata-row" title="Host"><strong>Host:</strong> ${host}</div>
-          <div class="metadata-row" title="Isolation Source"><strong>Source:</strong> ${isolationSource}</div>
-        </div>
+          <div class="metadata-row" title="Isolation Source"><strong>Isol. Source:</strong> ${isolationSource}</div>
+      </div>
       </div>
       <div class="similarity-badge" title="Similarity Score">${(similarity * 100).toFixed(0)}%</div>
     `;
 
-    // Add click handler to highlight this sequence
+    // Add click handler (no changes needed here)
     seqItem.addEventListener('click', function() {
-      // ... (highlighting logic remains largely the same) ...
        const sequenceIdToHighlight = this.dataset.id;
        const isHighlighted = this.classList.contains('highlighted');
 
-       // Clear highlights on others first
        document.querySelectorAll('.similar-sequence-item.highlighted').forEach(item => {
          if (item !== this) {
            item.classList.remove('highlighted');
-           highlightSequence(item.dataset.id, false); // Unhighlight in viz
+           highlightSequence(item.dataset.id, false);
          }
        });
 
-       // Toggle highlight on the clicked item
        if (!isHighlighted) {
          this.classList.add('highlighted');
-         highlightSequence(sequenceIdToHighlight, true); // Highlight in viz
+         highlightSequence(sequenceIdToHighlight, true);
        } else {
          this.classList.remove('highlighted');
-         highlightSequence(sequenceIdToHighlight, false); // Unhighlight in viz
+         highlightSequence(sequenceIdToHighlight, false);
        }
     });
 
@@ -807,22 +703,13 @@ function updateDetailsWithSimilarSequences(userSequence, similarSequences) {
 
   detailsPanel.appendChild(sequencesList);
 
-  // Add event listener to the clear highlights button (if it exists)
   const clearButton = document.getElementById('clear-highlights');
   if (clearButton) {
     clearButton.addEventListener('click', clearAllHighlights);
   }
 
-  // Re-apply hover effects for the new items
-  setTimeout(setupPointHoverEffects, 100); // Small delay
+  setTimeout(setupPointHoverEffects, 100);
 }
-
-// Helper function to get color for a sequence by index
-// function getSequenceColor(index) {
-//   const colors = ['rgba(228, 26, 28, 0.5)', 'rgba(55, 126, 184, 0.5)', 'rgba(77, 175, 74, 0.5)', 
-//                  'rgba(152, 78, 163, 0.5)', 'rgba(255, 127, 0, 0.5)'];
-//   return colors[index % colors.length];
-// }
 
 // Function to set up cross-highlighting between visualizations
 function setupCrossHighlighting() {
@@ -870,10 +757,6 @@ function setupCrossHighlighting() {
            sequenceItem.classList.toggle('hover-highlight', highlight);
          }
        }
-       // Highlight in Reference Map (if applicable)
-       // if (state.mapComponent && state.mapComponent.highlightPointById) {
-       //    state.mapComponent.highlightPointById(pointId, highlight);
-       // }
   };
 
   // Add event listeners directly to the container for geo map hovers
@@ -907,13 +790,6 @@ function setupCrossHighlighting() {
        console.warn("Could not find user-geo-container to attach hover listeners.");
   }
 
-
-   // --- Highlighting originating FROM the Details Panel ---
-   // ... (Keep this block as is, calls highlightSequence) ...
-
-   // --- (Optional) Highlighting originating FROM the Reference Map (mapComponent) ---
-   // ... (Keep this block as is) ...
-
    console.log("Cross-highlighting setup complete.");
 }
 
@@ -936,11 +812,6 @@ function highlightSequence(sequenceId, shouldHighlight = true) {
   if (state.userGeoMap && typeof state.userGeoMap.highlightSequence === 'function') {
     state.userGeoMap.highlightSequence(sequenceId, shouldHighlight);
   }
-
-  // Highlight in Reference Map (if supported)
-  // if (state.mapComponent && state.mapComponent.highlightPointById) {
-  //   state.mapComponent.highlightPointById(sequenceId, shouldHighlight);
-  // }
 
   // Highlight in details panel (handled by click listener adding/removing 'highlighted' class)
   // Ensure hover effects respect the 'highlighted' class
@@ -993,21 +864,7 @@ function setupPointHoverEffects() {
         if (state.userGeoMap?.highlightSequence) {
             state.userGeoMap.highlightSequence(sequenceId, isHovering); // Geo map might use its own hover style
         }
-         // Highlight in Reference Map if needed
-         // if (state.mapComponent?.highlightPointById) {
-         //    state.mapComponent.highlightPointById(sequenceId, isHovering);
-         // }
    }
-
-
-  // --- Add hover listeners ---
-
-  // For Main UMAP (Scatter Plot) - rely on its internal mouseover/out + crossHighlight
-  // We set the crossHighlight function earlier in setupCrossHighlighting
-
-
-  // For Geo Map - rely on its internal mouseover/out + crossHighlight (if callback set)
-  // Or use the direct listeners added in setupCrossHighlighting
 
 
   // For Details Panel items (ensure listeners are added after items are created)
@@ -1104,12 +961,6 @@ function clearAllHighlights() {
   }
   
   console.log('All highlights cleared');
-}
-
-function getSimilarityColor(similarity) {
-  if (similarity >= 0.9) return 'high';
-  if (similarity >= 0.7) return 'medium';
-  return 'low';
 }
 
 /**

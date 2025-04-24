@@ -16,75 +16,96 @@ import * as topojson from 'topojson-client'
  * @returns {Object} Map component API
  */
 function createApiMap(containerId, data = [], options = {}) {
-  // Default data to empty array
-  console.log(`Creating API map (Country Aggregation) for ${containerId}`)
+  const functionName = 'API Map (Country Aggregation)' // Name for logging
+  console.log(`Creating ${functionName} for ${containerId}`)
 
   // Default options
   const defaults = {
     width: null,
     height: null,
-    margin: { top: 10, right: 10, bottom: 10, left: 10 }, // Reduced bottom margin as legend is separate now
-    // Define scales for color (similarity) and size (count)
-    similarityColorScale: d3
-      .scaleSequential(d3.interpolateViridis)
-      .domain([0.5, 1]), // Color based on avg similarity (adjust domain as needed)
-    countRadiusScale: d3.scaleSqrt().domain([1, 100]).range([4, 20]), // Size based on count (adjust domain/range)
-    onPointClick: null, // Might be repurposed for country click
-    transitionDuration: 300,
+    margin: { top: 10, right: 10, bottom: 30, left: 10 },
+    colorScale: d3.scaleOrdinal(d3.schemeCategory10),
+    onPointClick: null,
+    transitionDuration: 500,
     defaultOpacity: 0.7,
     highlightOpacity: 1.0,
-    // Legend options are now less relevant here as it's external
-    // legendHeight: 80,
-    // legendMargin: { top: 5, right: 20, bottom: 25, left: 20 },
+    minRadius: 5,
+    maxRadius: 30,
+    legendHeight: 80,
+    legendMargin: { top: 5, right: 20, bottom: 25, left: 20 },
+    fallbackWidth: 600, // Fallback size if container size is 0
+    fallbackHeight: 400, // Fallback size if container size is 0
   }
 
   // Merge provided options with defaults
   const config = { ...defaults, ...options }
-  // Deep merge scales if provided
-  if (options.similarityColorScale)
-    config.similarityColorScale = options.similarityColorScale
-  if (options.countRadiusScale)
-    config.countRadiusScale = options.countRadiusScale
 
-  // --- Container Setup ---
+  // --- Defensive Checks ---
+  // Ensure legendHeight is a valid number
+  config.legendHeight =
+    typeof config.legendHeight === 'number' && !isNaN(config.legendHeight)
+      ? config.legendHeight
+      : defaults.legendHeight
+  // Ensure legendMargin is a valid object
+  config.legendMargin =
+    typeof config.legendMargin === 'object' && config.legendMargin !== null
+      ? { ...defaults.legendMargin, ...config.legendMargin }
+      : defaults.legendMargin
+  // --- End Defensive Checks ---
+
   const container = document.getElementById(containerId)
   if (!container) {
     console.error(`Container with ID "${containerId}" not found`)
     return null
   }
-  container.style.position = container.style.position || 'relative'
 
-  // --- SVG Setup ---
-  let width = config.width || container.clientWidth
-  // let height = (config.height || container.clientHeight) - config.legendHeight; // Legend height removed
-  let height = config.height || container.clientHeight
+  // Get actual dimensions from container OR use fallbacks
+  const containerWidth = container.clientWidth || config.fallbackWidth
+  const containerHeight =
+    container.clientHeight || config.fallbackHeight + config.legendHeight // Ensure fallback includes legend space
+
+  const width = config.width || containerWidth
+  // Calculate map height defensively
+  let mapHeight = (config.height || containerHeight) - config.legendHeight
+  if (isNaN(mapHeight) || mapHeight <= 0) {
+    console.warn(
+      `${functionName}: Calculated map height is invalid (${mapHeight}), using fallback.`
+    )
+    mapHeight = config.fallbackHeight // Use fallback map height
+  }
+  const totalSvgHeight = mapHeight + config.legendHeight // Recalculate total height
 
   // Calculate inner dimensions
-  let innerWidth = width - config.margin.left - config.margin.right
-  let innerHeight = height - config.margin.top - config.margin.bottom
+  const innerWidth = width - config.margin.left - config.margin.right
+  const innerHeight = mapHeight - config.margin.top - config.margin.bottom
 
-  // Clear previous SVG
-  d3.select(container).select('svg').remove()
+  if (innerWidth <= 0 || innerHeight <= 0) {
+    console.error(
+      `${functionName}: Invalid calculated inner dimensions (w: ${innerWidth}, h: ${innerHeight}). Check container size and margins.`
+    )
+    // Optionally set minimum dimensions
+    // innerWidth = Math.max(100, innerWidth);
+    // innerHeight = Math.max(100, innerHeight);
+    return null // Stop if dimensions are invalid
+  }
 
+  // Create SVG
   const svg = d3
     .select(container)
     .append('svg')
     .attr('width', '100%')
     .attr('height', '100%')
-    // .attr('viewBox', [0, 0, width, height + config.legendHeight]) // Legend height removed
-    .attr('viewBox', [0, 0, width, height])
+    .attr('viewBox', [0, 0, width, totalSvgHeight]) // Use total calculated height
     .attr('preserveAspectRatio', 'xMidYMid meet')
 
   const g = svg
     .append('g')
-    .attr('class', 'map-content')
     .attr('transform', `translate(${config.margin.left},${config.margin.top})`)
 
   // --- Projection and Path ---
-  const projection = geoEquirectangular()
-    .fitSize([innerWidth, innerHeight], { type: 'Sphere' })
-    .scale(innerWidth / 6.2)
-    .translate([innerWidth / 2, innerHeight / 1.8]) // Adjusted vertical translation slightly
+  const projection = geoEquirectangular().fitSize([innerWidth, innerHeight], {
+    type: 'Sphere',
+  })
 
   const pathGenerator = geoPath().projection(projection)
   const graticule = geoGraticule()
@@ -93,20 +114,60 @@ function createApiMap(containerId, data = [], options = {}) {
   g.append('path')
     .attr('class', 'sphere')
     .attr('d', pathGenerator({ type: 'Sphere' }))
-    .attr('fill', '#f0f0f0') // Lighter sphere
-    .attr('stroke', '#ccc')
+    .attr('fill', '#f8f9fa')
+    .attr('stroke', '#ddd')
     .attr('stroke-width', 0.5)
 
   g.append('path')
     .attr('class', 'graticule')
     .attr('d', pathGenerator(graticule()))
     .attr('fill', 'none')
-    .attr('stroke', '#e0e0e0') // Lighter grid
+    .attr('stroke', '#eee')
     .attr('stroke-width', 0.5)
 
   // Groups for map layers
   const worldGroup = g.append('g').attr('class', 'world')
-  const circlesGroup = g.append('g').attr('class', 'country-markers') // Renamed group
+  const circlesGroup = g.append('g').attr('class', 'circles')
+
+  // --- LEGEND INITIALIZATION ---
+  // Ensure legend height calculation is valid
+  const legendRectHeight = config.legendHeight + 15
+  if (isNaN(legendRectHeight)) {
+    console.error(
+      `${functionName}: Invalid legend background height calculation.`
+    )
+    return null // Stop if calculation failed
+  }
+
+  const legendBackground = svg
+    .append('rect')
+    .attr('x', 0)
+    .attr('y', mapHeight - 15) // Position relative to calculated map height
+    .attr('width', width)
+    .attr('height', legendRectHeight) // Use calculated valid height
+    .attr('fill', '#f8f9fa')
+    .attr('stroke', '#eee')
+    .attr('stroke-width', 1)
+
+  // Ensure legend group positioning calculation is valid
+  const legendTranslateX = config.legendMargin.left
+  const legendTranslateY = mapHeight + config.legendMargin.top
+  if (isNaN(legendTranslateX) || isNaN(legendTranslateY)) {
+    console.error(
+      `${functionName}: Invalid legend group translation calculation (x: ${legendTranslateX}, y: ${legendTranslateY}).`
+    )
+    return null // Stop if calculation failed
+  }
+
+  const legendGroup = svg
+    .append('g')
+    .attr('class', 'legend')
+    .attr('transform', `translate(${legendTranslateX},${legendTranslateY})`) // Use calculated valid translation
+  // --- END LEGEND INITIALIZATION ---
+
+  // Store world data
+  let worldData = null
+  let worldCountries = null
 
   // --- Tooltip ---
   const tooltip = d3
@@ -114,8 +175,8 @@ function createApiMap(containerId, data = [], options = {}) {
     .append('div')
     .attr('class', 'map-tooltip')
     .style('position', 'absolute')
-    .style('visibility', 'hidden')
-    .style('opacity', 0)
+    .style('visibility', 'hidden') // Start hidden
+    .style('opacity', 0) // Start fully transparent
     .style('background-color', 'rgba(255, 255, 255, 0.9)')
     .style('border', '1px solid #ccc')
     .style('border-radius', '4px')
@@ -123,15 +184,12 @@ function createApiMap(containerId, data = [], options = {}) {
     .style('box-shadow', '0 2px 5px rgba(0,0,0,0.15)')
     .style('font-family', 'sans-serif')
     .style('font-size', '12px')
-    .style('pointer-events', 'none')
+    .style('pointer-events', 'none') // Important: prevents tooltip from blocking mouse events
     .style('z-index', 1000)
-    .style('transition', 'opacity 0.2s ease-out, visibility 0.2s ease-out')
+  // --- REMOVE CSS TRANSITION FOR DEBUGGING ---
+  // .style('transition', 'opacity 0.2s ease-out, visibility 0.2s ease-out');
 
-  // --- Legend Removed ---
-  // const legendBackground = svg.append('rect')... // REMOVED
-  // const legendGroup = svg.append('g')... // REMOVED
-
-  // --- Explicit Country Coordinates & Name Standardization (Keep as is) ---
+  // Explicit country coordinates (longitude, latitude)
   const countryCoordinates = {
     'United States': [-98.5795, 39.8283],
     China: [104.1954, 35.8617],
@@ -185,7 +243,9 @@ function createApiMap(containerId, data = [], options = {}) {
     'United Arab Emirates': [53.8478, 23.4241],
     Iran: [53.688, 32.4279],
     Iraq: [43.6793, 33.2232],
-    Unknown: [0, 0], // Default position for unknown countries
+    Morocco: [-7.0926, 31.7917],
+    Romania: [24.9668, 45.9432],
+    Unknown: [0, 0], // Keep fallback for truly unknown
   }
   const countryNameMap = {
     usa: 'United States',
@@ -300,51 +360,126 @@ function createApiMap(containerId, data = [], options = {}) {
     'republic of iraq': 'Iraq',
     unknown: 'Unknown',
   }
+
+  // --- MOVE HELPER FUNCTIONS HERE (Before they are needed by updateMap) ---
   function standardizeCountryName(countryName) {
     if (!countryName) return 'Unknown'
     const lowerName = countryName.toLowerCase().trim()
     if (countryNameMap[lowerName]) {
       return countryNameMap[lowerName]
     }
-    for (const [key, value] of Object.entries(countryNameMap)) {
-      if (lowerName.includes(key) || key.includes(lowerName)) {
-        return value
-      }
-    }
-    // console.warn(`Country name not standardized: ${countryName}`) // Be less noisy
+    // Try to find a partial match (optional, can be noisy)
+    // for (const [key, value] of Object.entries(countryNameMap)) {
+    //   if (lowerName.includes(key) || key.includes(lowerName)) {
+    //     return value
+    //   }
+    // }
+    // console.log(`Country name not standardized: ${countryName}`) // Less noisy log
     return countryName.charAt(0).toUpperCase() + countryName.slice(1)
   }
 
-  // --- Declare worldCountries in the outer scope ---
-  let worldCountries = null // Use let since it will be reassigned
-  let worldDataLoaded = false // Keep track of loading state
-
-  // --- getCountryCoordinates function (ensure it checks the scoped worldCountries) ---
   function getCountryCoordinates(countryName) {
     const standardName = standardizeCountryName(countryName)
     if (countryCoordinates[standardName]) {
       const [longitude, latitude] = countryCoordinates[standardName]
-      return projection([longitude, latitude])
-    }
-
-    // --- Check the SCOPED worldCountries variable ---
-    if (worldCountries && worldDataLoaded) {
-      // Check flag too
-      const countryFeature = worldCountries.features.find(
-        (f) => standardizeCountryName(f.properties.name) === standardName
-      )
-      if (countryFeature) {
-        const centroid = geoPath().centroid(countryFeature)
-        if (centroid && !isNaN(centroid[0]) && !isNaN(centroid[1])) {
-          return projection(centroid)
-        }
+      // Ensure projection is ready before using it
+      if (projection) {
+        return projection([longitude, latitude])
       }
     }
-    // --- End check ---
-
-    // console.warn(`No coordinates for country: ${standardName}`) // Less noisy
-    return projection([0, 0]) // Fallback
+    console.warn(`${functionName}: No coordinates for country: ${standardName}`)
+    return projection ? projection([0, 0]) : [innerWidth / 2, innerHeight / 2] // Fallback
   }
+
+  function aggregateDataByCountry(aggregationData) {
+    const countryData = {}
+    ;(aggregationData || []).forEach((point) => {
+      if (!point) return
+      const country = standardizeCountryName(
+        point.metadata?.country ||
+          point.first_country ||
+          point.country ||
+          'Unknown'
+      )
+
+      if (!countryData[country]) {
+        let representativeLatLon = null
+        if (
+          point.metadata?.lat_lon &&
+          Array.isArray(point.metadata.lat_lon) &&
+          point.metadata.lat_lon.length > 0
+        ) {
+          const latLonStr = point.metadata.lat_lon[0]
+          if (
+            typeof latLonStr === 'string' &&
+            latLonStr.includes(',') &&
+            /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(latLonStr)
+          ) {
+            representativeLatLon = latLonStr
+            console.log(
+              `[aggregateData] Found representative lat/lon for ${country}: ${representativeLatLon}`
+            )
+          } else {
+            console.warn(
+              `[aggregateData] Invalid lat_lon format for ${country}: ${latLonStr}`
+            )
+          }
+        } else {
+          console.warn(
+            `[aggregateData] Missing lat_lon metadata for first sequence of ${country}`
+          )
+        }
+
+        countryData[country] = {
+          country: country,
+          count: 0,
+          sequences: [],
+          representativeLatLon: representativeLatLon,
+        }
+      }
+      countryData[country].count++
+      countryData[country].sequences.push(point)
+    })
+    console.log(
+      `Aggregation complete. Countries found: ${
+        Object.keys(countryData).length
+      }`
+    )
+    return Object.values(countryData)
+  }
+
+  function getTooltipContent(aggregatedData) {
+    const { country, count, representativeLatLon } = aggregatedData // Destructure needed data
+
+    // Format the representative coordinates for display
+    let coordString = 'N/A'
+    if (representativeLatLon) {
+      try {
+        const [latStr, lonStr] = representativeLatLon.split(',')
+        const lat = parseFloat(latStr).toFixed(4) // Format to 4 decimal places
+        const lon = parseFloat(lonStr).toFixed(4)
+        if (!isNaN(lat) && !isNaN(lon)) {
+          coordString = `Lat: ${lat}, Lon: ${lon}`
+        }
+      } catch (e) {
+        console.warn(
+          `Could not parse lat/lon for tooltip: ${representativeLatLon}`
+        )
+        coordString = 'Error parsing'
+      }
+    } else if (country === 'Unknown') {
+      coordString = 'No specific coordinates'
+    }
+
+    return `
+      <div style="font-family: sans-serif; font-size: 12px; line-height: 1.4;">
+        <h4 style="margin: 0 0 6px 0; font-size: 13px;">${country}</h4>
+        <div style="margin-bottom: 4px;"><strong>Sequences:</strong> ${count}</div>
+        <div style="color: #555;"><strong>Location Used:</strong> ${coordString}</div>
+      </div>
+    `
+  }
+  // --- END MOVE HELPER FUNCTIONS ---
 
   /**
    * Updates the map with new sequence data, aggregating by country.
@@ -353,199 +488,405 @@ function createApiMap(containerId, data = [], options = {}) {
    * @param {Object} updateOptions - Options for this specific update.
    */
   function updateMap(newData = [], userSequence = null, updateOptions = {}) {
+    const functionName = 'API Map (Country Aggregation)' // Add function name for logging
     console.log(
-      `API Map: Updating with ${newData.length} sequences, aggregating by country.`
+      `${functionName}: Updating with ${
+        newData?.length || 0
+      } sequences, aggregating by country.`
     )
 
-    // Merge update options
-    const updateConfig = { ...config, ...updateOptions }
+    // --- FIX: Ensure config is accessible and radiusScale is valid ---
+    const currentConfig = { ...config, ...updateOptions } // Use a merged config locally
+    const aggregatedData = aggregateDataByCountry(newData || [])
+    console.log(
+      `${functionName}: Aggregated into ${aggregatedData.length} countries.`
+    )
 
-    // --- Step 1: Aggregate Data ---
-    const countryData = {}
-    newData.forEach((point) => {
-      if (!point || !point.metadata) return // Skip points without metadata
+    let radiusScale // Declare radiusScale
+    try {
+      const maxCount = d3.max(aggregatedData, (d) => d?.count) || 1 // Add safe navigation for d.count
+      radiusScale = d3
+        .scaleSqrt()
+        .domain([1, maxCount]) // Domain should be [min, max]
+        .range([currentConfig.minRadius, currentConfig.maxRadius]) // Use merged config
 
-      // Use standardized country name
-      const country = standardizeCountryName(
-        point.metadata.country || point.metadata.first_country || 'Unknown'
+      // Check if scale creation was successful
+      if (
+        typeof radiusScale !== 'function' ||
+        typeof radiusScale.domain !== 'function'
+      ) {
+        throw new Error('Failed to create radius scale.')
+      }
+    } catch (scaleError) {
+      console.error(`${functionName}: Error creating radius scale:`, scaleError)
+      console.error('Aggregated data sample:', aggregatedData.slice(0, 5)) // Log data sample
+      // Use a fallback scale if creation failed
+      radiusScale = d3
+        .scaleSqrt()
+        .domain([1, 1])
+        .range([currentConfig.minRadius, currentConfig.minRadius])
+      console.warn(`${functionName}: Using fallback radius scale.`)
+    }
+    // --- END FIX ---
+
+    // Call updateLegend (ensure legendGroup is valid)
+    if (legendGroup && !legendGroup.empty()) {
+      updateLegend(radiusScale, aggregatedData, legendGroup)
+    } else {
+      console.warn(
+        `${functionName}: legendGroup not ready when updateMap called.`
       )
-      // Ensure similarity is a number
-      const similarity =
-        typeof point.similarity === 'number' ? point.similarity : 0
+    }
 
-      if (!countryData[country]) {
-        countryData[country] = {
-          country: country,
-          count: 0,
-          totalSimilarity: 0,
-          sequences: [], // Store original sequences if needed for tooltips/clicks
-          isolationSources: new Set(), // Collect unique sources
-        }
-      }
-
-      countryData[country].count++
-      countryData[country].totalSimilarity += similarity
-      countryData[country].sequences.push(point)
-      if (point.metadata.isolation_source) {
-        countryData[country].isolationSources.add(
-          point.metadata.isolation_source
-        )
-      }
-    })
-
-    // Calculate average similarity and convert to array
-    const aggregatedData = Object.values(countryData)
-      .map((d) => ({
-        ...d,
-        avgSimilarity: d.count > 0 ? d.totalSimilarity / d.count : 0,
-        isolationSources: Array.from(d.isolationSources), // Convert Set to Array
-      }))
-      .filter((d) => d.count > 0) // Filter out any potential empty groups
-
-    console.log(`API Map: Aggregated into ${aggregatedData.length} countries.`)
-    // console.log('Aggregated Country Data:', aggregatedData); // Optional detailed log
-
-    // --- Step 2: Update Scales ---
-    // Update count scale domain based on current data
-    const maxCount = d3.max(aggregatedData, (d) => d.count) || 1
-    updateConfig.countRadiusScale.domain([1, maxCount])
-    // Similarity scale domain is usually fixed (e.g., 0 to 1 or 0.5 to 1)
-    // config.similarityColorScale.domain([minAvgSimilarity, maxAvgSimilarity]); // Optionally update domain
-
-    // --- Step 3: Data Join for Country Markers ---
+    // Join data with circles
     const circles = circlesGroup
-      .selectAll('.country-marker')
-      .data(aggregatedData, (d) => d.country) // Key by country name
+      .selectAll('.country-circle')
+      .data(aggregatedData, (d) => d.country)
 
-    // --- Step 4: Exit ---
+    // Remove old circles
     circles
       .exit()
-      .transition('exit')
-      .duration(updateConfig.transitionDuration / 2)
+      .transition()
+      .duration(currentConfig.transitionDuration) // Use merged config
       .attr('r', 0)
       .remove()
 
-    // --- Step 5: Enter ---
+    // Add new circles
     const enterCircles = circles
       .enter()
       .append('circle')
-      .attr('class', 'country-marker')
-      .attr('r', 0) // Start radius at 0
-      .style('stroke', '#333') // Darker stroke for better visibility
-      .style('stroke-width', 0.5)
+      .attr('class', 'country-circle')
+      .attr('r', 0) // Start radius at 0 for animation
+      .style('fill', (d) => currentConfig.colorScale(d.country)) // Use merged config
+      .style('fill-opacity', currentConfig.defaultOpacity) // Use merged config
+      .style('stroke', '#fff')
+      .style('stroke-width', 1)
       .style('cursor', 'pointer')
-      .attr('data-country', (d) => d.country) // Add country attribute
 
-    // --- Step 6: Update + Enter ---
-    const mergedCircles = enterCircles.merge(circles)
-
-    // Position circles and apply styles
-    mergedCircles.each(function (d) {
-      const coords = getCountryCoordinates(d.country)
-      if (coords && !isNaN(coords[0]) && !isNaN(coords[1])) {
-        d3.select(this)
-          .transition('update-pos')
-          .duration(updateConfig.transitionDuration)
-          .attr('cx', coords[0])
-          .attr('cy', coords[1])
-      } else {
-        console.warn(
-          `Could not get valid coordinates for ${d.country}. Hiding marker.`
-        )
-        d3.select(this).attr('cx', null).attr('cy', null).attr('r', 0) // Hide if no coords
-      }
-    })
-
-    mergedCircles
-      .transition('update-style')
-      .duration(updateConfig.transitionDuration)
-      .attr('r', (d) => updateConfig.countRadiusScale(d.count)) // Size by count
-      .style('fill', (d) => updateConfig.similarityColorScale(d.avgSimilarity)) // Color by avg similarity
-      .style('fill-opacity', updateConfig.defaultOpacity)
-
-    // --- Step 7: Event Handlers ---
-    mergedCircles
+    // Apply event handlers only to enter selection
+    enterCircles
       .on('mouseover', function (event, d) {
+        console.log('[mouseover] Event triggered for:', d.country) // Log handler trigger
+        // --- APPLY HOVER STYLES DIRECTLY ---
         d3.select(this)
-          .transition('mouseover')
-          .duration(100)
-          .style('fill-opacity', updateConfig.highlightOpacity)
-          .style('stroke-width', 1.5)
+          // .transition().duration(50) // Remove transition
+          .style('fill-opacity', currentConfig.highlightOpacity)
+          .style('stroke-width', 2)
 
+        // --- SET TOOLTIP STYLES DIRECTLY & LOG ---
         tooltip
-          .html(getTooltipContent(d)) // Use updated tooltip function
-          .style('visibility', 'visible')
-          .transition('tooltip-in')
-          .duration(100)
-          .style('opacity', 1)
+          .style('visibility', 'visible') // Make it visible
+          .style('opacity', 1) // Make it fully opaque
+          .html(getTooltipContent(d))
+
+        console.log(
+          '[mouseover] Tooltip visibility:',
+          tooltip.style('visibility')
+        ) // Log state
+        console.log('[mouseover] Tooltip opacity:', tooltip.style('opacity')) // Log state
+
+        // --- POSITIONING (Keep existing logic for now) ---
+        tooltip
+          .style('top', event.pageY - 10 + 'px')
+          .style('left', event.pageX + 10 + 'px')
+
+        console.log(
+          `[mouseover] Tooltip position: top=${tooltip.style(
+            'top'
+          )}, left=${tooltip.style('left')}`
+        ) // Log position
       })
       .on('mousemove', function (event) {
+        // Keep mousemove for position updates
         tooltip
-          .style('top', event.pageY - 15 + 'px') // Adjust position slightly
-          .style('left', event.pageX + 15 + 'px')
+          .style('top', event.pageY - 10 + 'px')
+          .style('left', event.pageX + 10 + 'px')
       })
       .on('mouseout', function () {
+        console.log('[mouseout] Event triggered') // Log handler trigger
+        // --- APPLY MOUSEOUT STYLES DIRECTLY ---
         d3.select(this)
-          .transition('mouseout')
-          .duration(100)
-          .style('fill-opacity', updateConfig.defaultOpacity)
-          .style('stroke-width', 0.5)
+          // .transition().duration(150) // Remove transition
+          .style('fill-opacity', currentConfig.defaultOpacity)
+          .style('stroke-width', 1)
 
+        // --- HIDE TOOLTIP DIRECTLY & LOG ---
         tooltip
-          .transition('tooltip-out')
-          .duration(100)
-          .style('opacity', 0)
-          .end() // Use end() promise for reliable visibility change
-          .then(() => tooltip.style('visibility', 'hidden'))
+          .style('visibility', 'hidden') // Hide it
+          .style('opacity', 0) // Make it transparent
+
+        console.log(
+          '[mouseout] Tooltip visibility:',
+          tooltip.style('visibility')
+        ) // Log state
       })
       .on('click', function (event, d) {
-        console.log('Clicked country marker:', d)
-        if (updateConfig.onPointClick) {
-          // Pass relevant country data to the click handler
-          updateConfig.onPointClick({ type: 'country', data: d })
+        if (currentConfig.onPointClick) {
+          currentConfig.onPointClick(d)
         }
-        // Add visual feedback for click if desired (e.g., thicker stroke)
-        d3.select(this)
-          .transition('click')
-          .duration(50)
-          .style('stroke-width', 2.5)
-          .transition()
-          .delay(150)
-          .duration(200)
-          .style('stroke-width', 1.5) // Briefly thicken stroke
+        circlesGroup
+          .selectAll('.country-circle')
+          .style('stroke', '#fff')
+          .style('stroke-width', 1)
+        d3.select(this).style('stroke', '#333').style('stroke-width', 2)
       })
+
+    const allCircles = enterCircles.merge(circles)
+
+    allCircles.each(function (d) {
+      // --- MODIFIED COORDINATE LOGIC WITH LOGGING ---
+      console.log(`[updateMap] Processing country: ${d.country}`) // Log country being processed
+      let coords = null
+      let coordSource = 'unknown' // Track where the coordinate came from
+
+      // Try to use the representativeLatLon first
+      if (d.representativeLatLon) {
+        console.log(
+          `[updateMap] Attempting representativeLatLon: "${d.representativeLatLon}"`
+        )
+        try {
+          const [latStr, lonStr] = d.representativeLatLon.split(',')
+          const lat = parseFloat(latStr)
+          const lon = parseFloat(lonStr)
+          console.log(`[updateMap] Parsed lat: ${lat}, lon: ${lon}`) // Log parsed values
+
+          if (
+            !isNaN(lat) &&
+            !isNaN(lon) &&
+            lat >= -90 &&
+            lat <= 90 &&
+            lon >= -180 &&
+            lon <= 180
+          ) {
+            coords = projection([lon, lat])
+            if (coords && !isNaN(coords[0]) && !isNaN(coords[1])) {
+              console.log(
+                `[updateMap] Projected representative coords: [${coords[0]}, ${coords[1]}]`
+              )
+              coordSource = 'representative'
+            } else {
+              console.warn(
+                `[updateMap] Projection of representative coords failed: [${coords}]`
+              )
+              coords = null // Reset coords if projection failed
+            }
+          } else {
+            console.warn(
+              `[updateMap] Parsed lat/lon numbers invalid or out of range: lat=${lat}, lon=${lon}`
+            )
+          }
+        } catch (parseError) {
+          console.error(
+            `[updateMap] Error parsing lat/lon string: "${d.representativeLatLon}"`,
+            parseError
+          )
+        }
+      } else {
+        console.log(
+          `[updateMap] No representativeLatLon found for ${d.country}.`
+        )
+      }
+
+      // Fallback to predefined country coordinates
+      if (!coords) {
+        console.log(
+          `[updateMap] Falling back to getCountryCoordinates for ${d.country}`
+        )
+        coords = getCountryCoordinates(d.country) // Keep the old lookup as fallback
+        if (coords && !isNaN(coords[0]) && !isNaN(coords[1])) {
+          // Check if it returned the fallback [0, 0] projection
+          const fallbackProjected = projection([0, 0])
+          if (
+            coords[0] === fallbackProjected[0] &&
+            coords[1] === fallbackProjected[1]
+          ) {
+            console.warn(
+              `[updateMap] getCountryCoordinates returned fallback projection for ${d.country}.`
+            )
+            coordSource = 'predefined_fallback'
+          } else {
+            console.log(
+              `[updateMap] Used predefined coords: [${coords[0]}, ${coords[1]}]`
+            )
+            coordSource = 'predefined'
+          }
+        } else {
+          console.warn(
+            `[updateMap] getCountryCoordinates returned invalid coords: [${coords}]`
+          )
+          coords = null // Reset coords if invalid
+        }
+      }
+
+      // Apply the coordinates (with final validation and fallback)
+      let finalCx = innerWidth / 2 // Default to center X
+      let finalCy = innerHeight / 2 // Default to center Y
+
+      if (coords && !isNaN(coords[0]) && !isNaN(coords[1])) {
+        finalCx = coords[0]
+        finalCy = coords[1]
+      } else {
+        console.error(
+          `[updateMap] Failed to get *any* valid coordinates for ${d.country}. Using center fallback.`
+        )
+        coordSource = 'center_fallback'
+      }
+
+      console.log(
+        `[updateMap] Applying coords for ${d.country}: cx=${finalCx}, cy=${finalCy} (Source: ${coordSource})`
+      )
+
+      // --- CHANGE: Apply cx/cy directly, NOT in transition ---
+      d3.select(this).attr('cx', finalCx).attr('cy', finalCy)
+      // --- END CHANGE ---
+    }) // End of allCircles.each
+
+    // Keep transition for radius and fill on the merged selection
+    allCircles
+      .transition()
+      .duration(currentConfig.transitionDuration) // Use merged config
+      .attr('r', (d) => radiusScale(d.count))
+      .style('fill', (d) => currentConfig.colorScale(d.country)) // Use merged config
   }
 
-  // --- Legend Update Function Removed ---
-  // function updateLegend(radiusScale, maxCount) { ... } // REMOVED
-
   /**
-   * Generates HTML content for the tooltip based on aggregated country data.
-   * @param {Object} aggregatedCountryData - The data object for the hovered country.
-   * @returns {string} HTML string for the tooltip.
+   * Updates the legend display (both size and color)
+   * @param {d3.Scale} radiusScale - The scale for circle radius based on count.
+   * @param {Array} aggregatedData - The data aggregated by country.
+   * @param {d3.Selection} lg - The D3 selection for the legend group element.
    */
-  function getTooltipContent(aggregatedCountryData) {
-    const { country, count, avgSimilarity, isolationSources } =
-      aggregatedCountryData
-    const avgSimilarityPercent = (avgSimilarity * 100).toFixed(1)
+  function updateLegend(radiusScale, aggregatedData, lg) {
+    if (!lg || lg.empty()) {
+      console.error(
+        `${functionName}: legendGroup selection is not available in updateLegend.`
+      )
+      return
+    }
+    lg.selectAll('*').remove()
 
-    // Display top N isolation sources
-    const maxSourcesToShow = 3
-    const sourcesToShow = isolationSources.slice(0, maxSourcesToShow).join(', ')
-    const remainingSources = isolationSources.length - maxSourcesToShow
-    const sourcesString =
-      isolationSources.length > 0
-        ? `${sourcesToShow}${
-            remainingSources > 0 ? ` (+${remainingSources} more)` : ''
-          }`
-        : 'N/A'
+    // --- Size Legend (KEEP THIS) ---
+    const sizeLegendGroup = lg.append('g').attr('class', 'size-legend')
+    sizeLegendGroup
+      .append('text')
+      .attr('class', 'legend-title')
+      .attr('x', 0)
+      .attr('y', 0)
+      .attr('dy', '0.35em')
+      .style('font-size', '12px')
+      .style('font-weight', 'bold')
+      .text('Sequence Count')
 
-    return `
-        <h4 style="margin: 0 0 6px 0; border-bottom: 1px solid #eee; padding-bottom: 4px;">${country}</h4>
-        <p style="margin: 3px 0;"><strong>Sequences:</strong> ${count}</p>
-        <p style="margin: 3px 0;"><strong>Avg. Similarity:</strong> ${avgSimilarityPercent}%</p>
-        <p style="margin: 3px 0;"><strong>Sources:</strong> ${sourcesString}</p>
-    `
+    const minCount = d3.min(aggregatedData, (d) => d.count) || 1
+    const numBubbles = 5
+    const currentMaxCount = d3.max(aggregatedData, (d) => d.count) || 1
+    let bubbleValues = d3
+      .ticks(minCount, currentMaxCount, numBubbles)
+      .filter((v) => v >= minCount)
+    if (bubbleValues.length === 0 && currentMaxCount >= minCount) {
+      bubbleValues = [minCount, currentMaxCount].filter(
+        (v, i, a) => a.indexOf(v) === i
+      ) // Handle edge case with just min/max
+    } else {
+      if (bubbleValues.length < numBubbles && !bubbleValues.includes(minCount))
+        bubbleValues.unshift(minCount)
+      if (
+        bubbleValues.length < numBubbles &&
+        !bubbleValues.includes(currentMaxCount) &&
+        currentMaxCount > minCount
+      )
+        bubbleValues.push(currentMaxCount)
+    }
+    // Ensure uniqueness and handle case where min === max
+    bubbleValues = [...new Set(bubbleValues)].sort((a, b) => a - b)
+    if (bubbleValues.length === 0 && currentMaxCount >= minCount)
+      bubbleValues = [currentMaxCount]
+
+    const bubbleSizes = bubbleValues.map((value) => ({
+      value: value,
+      // --- Adjust radius calculation slightly for better spacing ---
+      radius: Math.max(2, radiusScale(value) * 0.7),
+    }))
+
+    const sizeLegendWidth = 150
+    const sizeStartX = 0
+    // Calculate positioning based on accumulated width + padding
+    let currentX = sizeStartX
+    const padding = 10
+
+    bubbleSizes.forEach((bubble, i) => {
+      // Position based on previous bubble's right edge + radius + padding
+      const cx = currentX + bubble.radius
+
+      sizeLegendGroup
+        .append('circle')
+        .attr('cx', cx)
+        .attr('cy', 25)
+        .attr('r', bubble.radius)
+        .style('fill', '#6c757d')
+        .style('fill-opacity', 0.7)
+        .style('stroke', '#fff')
+        .style('stroke-width', 1)
+
+      sizeLegendGroup
+        .append('text')
+        .attr('x', cx)
+        .attr('y', 25 + bubble.radius + 15) // Adjust text position based on radius
+        .attr('text-anchor', 'middle')
+        .style('font-size', '11px')
+        .text(bubble.value)
+
+      // Update currentX for the next bubble
+      currentX = cx + bubble.radius + padding
+    })
+
+    // --- Color Legend (COMMENT OUT / REMOVE THIS SECTION) ---
+    /* 
+    const colorLegendGroup = lg
+      .append('g')
+      .attr('class', 'color-legend')
+      .attr('transform', `translate(${sizeLegendWidth + 30}, 0)`) // Adjust sizeLegendWidth if necessary
+
+    colorLegendGroup
+      .append('text')
+      .attr('class', 'legend-title')
+      .attr('x', 0)
+      .attr('y', 0)
+      .attr('dy', '0.35em')
+      .style('font-size', '12px')
+      .style('font-weight', 'bold')
+      .text('Country') // REMOVED
+
+    const uniqueCountries = [
+      ...new Set(aggregatedData.map((d) => d.country)),
+    ].slice(0, 8)
+    const legendItemHeight = 18
+    const legendColorBoxSize = 12
+
+    const colorLegendItems = colorLegendGroup
+      .selectAll('.legend-item')
+      .data(uniqueCountries)
+      .enter()
+      .append('g')
+      .attr('class', 'legend-item')
+      .attr('transform', (d, i) => `translate(0, ${15 + i * legendItemHeight})`)
+
+    colorLegendItems
+      .append('rect')
+      .attr('x', 0)
+      .attr('y', 0)
+      .attr('width', legendColorBoxSize)
+      .attr('height', legendColorBoxSize)
+      .style('fill', (d) => config.colorScale(d)) // Correct scale name
+
+    colorLegendItems
+      .append('text')
+      .attr('x', legendColorBoxSize + 8)
+      .attr('y', legendColorBoxSize / 2)
+      .attr('dy', '0.35em')
+      .style('font-size', '11px')
+      .text((d) => d) 
+    */
+    // --- END REMOVED COLOR LEGEND ---
   }
 
   /**
@@ -562,36 +903,59 @@ function createApiMap(containerId, data = [], options = {}) {
     // svg.attr('viewBox', [0, 0, width, height + config.legendHeight]); // Legend height removed
     svg.attr('viewBox', [0, 0, width, height])
 
-    // Update projection
-    projection
-      .fitSize([innerWidth, innerHeight], { type: 'Sphere' })
-      .scale(innerWidth / 6.2)
-      .translate([innerWidth / 2, innerHeight / 1.8])
+    // Update projection on resize - Apply same simplification
+    projection.fitSize([innerWidth, innerHeight], { type: 'Sphere' })
 
-    // Update map elements
+    // Update map elements (paths)
     g.select('.sphere').attr('d', pathGenerator({ type: 'Sphere' }))
     g.select('.graticule').attr('d', pathGenerator(graticule()))
     if (worldGroup.selectAll('.country').size() > 0) {
       worldGroup.selectAll('.country').attr('d', pathGenerator)
     }
 
-    // Update country markers position
-    circlesGroup.selectAll('.country-marker').each(function (d) {
-      const coords = getCountryCoordinates(d.country)
+    // Update country markers position - using the updated projection
+    circlesGroup.selectAll('.country-circle').each(function (d) {
+      // Apply same logic as in updateMap, but use the *resized* projection
+      let coords = null
+      if (d.representativeLatLon) {
+        try {
+          const [latStr, lonStr] = d.representativeLatLon.split(',')
+          const lat = parseFloat(latStr)
+          const lon = parseFloat(lonStr)
+          if (
+            !isNaN(lat) &&
+            !isNaN(lon) &&
+            lat >= -90 &&
+            lat <= 90 &&
+            lon >= -180 &&
+            lon <= 180
+          ) {
+            // Use the updated projection object directly
+            coords = projection([lon, lat])
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      }
+      if (!coords) {
+        coords = getCountryCoordinates(d.country) // Fallback uses the updated projection
+      }
       if (coords && !isNaN(coords[0]) && !isNaN(coords[1])) {
         d3.select(this).attr('cx', coords[0]).attr('cy', coords[1])
+      } else {
+        d3.select(this)
+          .attr('cx', innerWidth / 2)
+          .attr('cy', innerHeight / 2)
       }
     })
 
-    // --- Legend Update Removed ---
-    // if (circlesGroup.selectAll('.country-marker').size() > 0) { ... updateLegend(...) ... } // REMOVED
+    // Legend update was already removed/commented out
   }
 
   // Add resize listener
   window.addEventListener('resize', handleResize)
 
   // --- Load World Map Data ---
-  // let worldDataLoaded = false; // Moved declaration to outer scope
   d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
     .then((worldMapData) => {
       // --- Assign to the SCOPED worldCountries variable ---
@@ -612,7 +976,6 @@ function createApiMap(containerId, data = [], options = {}) {
         .attr('stroke', '#fff')
         .attr('stroke-width', 0.3)
 
-      worldDataLoaded = true // Set flag AFTER data is processed
       console.log('World map data loaded and rendered.')
 
       // Initialize with data if provided *after* map is drawn AND data is processed
@@ -624,7 +987,19 @@ function createApiMap(containerId, data = [], options = {}) {
       console.error('Error loading world map data:', error)
       // Update map even if world data fails, markers might default to 0,0
       if (data && data.length > 0) {
-        updateMap(data, null, options)
+        console.warn(
+          'World map failed to load, calling updateMap without map features.'
+        )
+        // Check if legendGroup is defined before calling updateMap that uses it
+        if (legendGroup && !legendGroup.empty()) {
+          updateMap(data, null, options) // Call updateMap from .catch()
+        } else {
+          console.error(
+            'Cannot call updateMap from .catch as legendGroup is not ready.'
+          )
+          // Potentially render just the circles without the legend if needed
+          // Or show an error state
+        }
       }
     })
 

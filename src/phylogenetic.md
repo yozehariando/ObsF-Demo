@@ -3,7 +3,7 @@ theme: dashboard
 toc: false
 ---
 
-# Zika Virus Phylogenetic Analysis - ori
+# Zika Virus Phylogenetic Analysis
 
 This visualization shows the evolutionary relationships of Zika virus samples and their geographic distribution.
 

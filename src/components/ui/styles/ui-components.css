@@ -224,3 +224,157 @@
   transition: opacity 0.2s;
   z-index: 1000;
 }
+
+/* ===== Details Panel Styles ===== */
+#details-panel {
+  /* Ensure container allows scrolling if content overflows */
+  overflow-y: auto;
+  /* Set a max-height if not already set by transitions, 
+     adjust value as needed based on layout */
+  max-height: 1005px; 
+  font-size: 0.875rem; /* Slightly smaller base font */
+  transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+  opacity: 1;
+}
+
+.details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.details-header h3 {
+  margin: 0;
+  font-size: 1rem; /* Adjust title size */
+  font-weight: 600;
+}
+
+.user-sequence {
+  background-color: #e3f2fd;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.sequence-info.user-sequence {
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  background-color: #fff3e0; /* Light orange background for user */
+  border-left: 3px solid #FF5722; /* Orange accent */
+  border-radius: 3px;
+}
+
+.similar-sequences-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem; /* Space between items */
+}
+
+.similar-sequence-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  background-color: #fff;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
+  gap: 0.5rem;
+  border-left: 3px solid transparent; /* Default transparent border */
+}
+
+.similar-sequence-item:hover,
+.similar-sequence-item.hover-highlight {
+  background-color: #e3f2fd; /* Light blue hover */
+  border-color: #bbdefb;
+  /* Keep the left border color from the similarity level */
+  border-left-color: var(--similarity-border-color, #bbdefb); 
+}
+
+.similar-sequence-item.highlighted {
+  background-color: #fff3e0; /* Light orange selected */
+  border-left-color: var(--similarity-border-color, #FF5722); /* Use original color or fallback */
+  padding-left: calc(0.75rem - 3px); /* Adjust padding */
+}
+
+.sequence-content {
+  flex-grow: 1;
+  overflow: hidden; /* Prevent long names from breaking layout */
+}
+
+.sequence-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 0.25rem;
+  color: #333;
+}
+
+.sequence-metadata {
+  font-size: 0.75rem; /* Smaller font for metadata */
+  color: #666;
+  line-height: 1.4;
+  /* Optional: grid layout for metadata rows */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); /* Adjust minmax as needed */
+  gap: 0.1rem 0.5rem; 
+}
+
+.metadata-row {
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
+}
+
+.metadata-row strong {
+    color: #444;
+}
+
+.similarity-badge {
+  flex-shrink: 0; /* Prevent badge from shrinking */
+  font-size: 0.75rem;
+  font-weight: bold;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  background-color: #e0e0e0; /* Default grey badge */
+  color: #555;
+  margin-left: 0.5rem;
+  text-align: center;
+  min-width: 40px; /* Ensure minimum width */
+}
+
+/* Optional: Color coding for badge based on similarity */
+.similar-sequence-item[data-similarity-level="high"] .similarity-badge {
+  background-color: #c8e6c9; /* Light Green */
+  color: #2e7d32;
+}
+.similar-sequence-item[data-similarity-level="medium"] .similarity-badge {
+  background-color: #fff9c4; /* Light Yellow */
+  color: #f57f17;
+}
+.similar-sequence-item[data-similarity-level="low"] .similarity-badge {
+   background-color: #ffcdd2; /* Light Red/Pink */
+   color: #c62828;
+}
+
+/* Add styles for similarity level classes */
+.similar-sequence-item.similarity-high {
+  border-left-color: #4CAF50; /* Green for high */
+}
+.similar-sequence-item.similarity-medium {
+  border-left-color: #FFC107; /* Yellow for medium */
+}
+.similar-sequence-item.similarity-low {
+  border-left-color: #F44336; /* Red for low */
+}
+
+.no-results {
+  text-align: center;
+  color: #888;
+  padding: 1rem;
+}
