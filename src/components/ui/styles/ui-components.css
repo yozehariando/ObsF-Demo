@@ -435,7 +435,7 @@
   #map-container {
       min-height: 350px; /* Reduced height for mobile */
   }
-   #user-geo-container {
+  #user-geo-container {
       height: 300px; /* Reduced height for mobile */
   }
   
@@ -469,4 +469,8 @@
 /* Layout Override for Left Map Column */
 .left-map-column .card {
   margin: 0; /* Remove default top/bottom margin specifically for cards in this column */
+}
+
+#user-geo-container {
+  min-height: 430px;
 }

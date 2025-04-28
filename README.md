@@ -1,6 +1,12 @@
-# ObsF Demo - Refactored Dashboard
+# DNA Sequence Similarity Dashboard
 
-This project contains a refactored, modular implementation of the DNA sequence visualization dashboard.
+This project implements a modular dashboard for visualizing user-uploaded DNA sequences and their similarity to sequences in a reference database. It is built using the Observable Framework.
+
+## Project Focus
+
+The primary application is **`src/index.md`**. This file integrates various modular components (UI, data fetching, visualizations) to provide a user-driven workflow: upload a FASTA sequence, see its UMAP projection, and explore the geographic distribution and details of the most similar sequences found in the database.
+
+The files `src/phylogenetic.md` and `src/phylotree-visualization.md` are separate, standalone examples demonstrating phylogenetic tree rendering and related visualizations. They are **not** part of the main `src/index.md` application flow.
 
 ## Project Structure
 
@@ -8,73 +14,108 @@ The codebase has been organized into a modular structure:
 
 ```
 src/
-├── dashboard.md                   # Original dashboard code (preserved for reference)
-├── dashboard-new.md               # Refactored dashboard with modular imports
-├── visualization/                 # Visualization components
-│   ├── umap-visualization.js      # Core visualization functionality
-│   ├── tooltip-formatter.js       # Tooltip creation and formatting
-│   ├── legend-builder.js          # Legend creation and styling
-│   └── point-styler.js            # Point color and size functions
-├── data-processing/               # Data handling modules
-│   ├── sequence-matcher.js        # Sequence matching algorithms
-│   ├── cache-manager.js           # UMAP data cache management
-│   ├── debug-integration.js       # Debug utilities integration
-│   └── coordinate-mapper.js       # Coordinate transformation logic
-├── ui-components/                 # UI element modules
-│   ├── details-panel.js           # Sequence details panel
-│   ├── hover-effects.js           # Interactive hover behaviors
-│   └── highlight-manager.js       # Cross-panel highlighting
-└── utils/                         # Utility functions
-    ├── dom-utils.js               # DOM manipulation helpers
-    └── debug-utils.js             # Debug and development utilities
+├── index.md                     # <<< MAIN APPLICATION DASHBOARD >>>
+├── phylogenetic.md              # Standalone phylogenetic example
+├── phylotree-visualization.md   # Standalone phylotree example
+│
+├── components/                  # Reusable components for index.md
+│   ├── data/                    # Data fetching, processing, caching
+│   │   ├── api-job-tracker.js
+│   │   ├── api-service.js
+│   │   └── api-similarity-service.js
+│   ├── ui/                      # UI elements (modals, messages, etc.)
+│   │   ├── api-upload-component.js
+│   │   ├── dom-utils.js          # (Includes details panel update logic)
+│   │   ├── loading-indicator.js
+│   │   ├── message-handler.js
+│   │   ├── status-manager.js
+│   │   └── styles/
+│   │       └── ui-components.css # Shared CSS styles
+│   └── visualizations/          # Visualization modules
+│       ├── api-map-component.js # Contextual reference map
+│       ├── scatter-plot.js      # Contextual UMAP plot
+│       └── user-geo-map.js      # Top 10 geographic map
+│
+└── utils/                         # General utility functions (if any separate ones exist)
+    └── ...(placeholder)          # (Currently, most utils are within components)
+
+doc/                               # Documentation
+├── ... (other docs)
+
+data/                              # Example/static data (e.g., for phylogenetic examples)
+├── zika-authors.tsv
+└── zika-tree.json
 ```
 
 ## Getting Started
 
-1. Use `dashboard-new.md` for the refactored implementation
-2. `dashboard.md` is preserved for reference but will be deprecated
+### Prerequisites
+
+-   Node.js and npm (or Yarn) installed.
+
+### Running Locally
+
+1.  **Install Dependencies:**
+    ```bash
+    npm install
+    # or
+    yarn install
+    ```
+2.  **Start the Development Server:**
+    ```bash
+    npm run dev
+    # or
+    yarn dev
+    ```
+    This will start the Observable Framework preview server, typically at `http://127.0.0.1:3000/`. The server provides live previews as you make changes.
+
+3.  **Open the Dashboard:** Navigate to `http://127.0.0.1:3000/` (or the port shown in the terminal) in your web browser. This will load `src/index.md`.
+
+4.  **Explore Other Examples:**
+    -   Phylogenetic Map + Tree: `http://127.0.0.1:3000/phylogenetic`
+    -   Phylotree Visualization: `http://127.0.0.1:3000/phylotree-visualization`
 
 ## Documentation
 
-- **Refactoring Plan**: `doc/refactoring/plan.md`
-- **Summary Report**: `doc/refactoring/summary-report.md`
+-   **Observable Framework Documentation:** [https://observablehq.com/framework/](https://observablehq.com/framework/)
 
-## Module Overview
+## Core Components (Used in `src/index.md`)
 
-### Visualization Layer
+### Data Layer (`src/components/data/`)
 
-- **umap-visualization.js**: Core functions for creating and updating UMAP visualizations
-- **tooltip-formatter.js**: Formatting and rendering tooltips for data points
-- **legend-builder.js**: Creates standardized legends for visualizations
-- **point-styler.js**: Functions for styling points based on data attributes
+-   **api-service.js**: Handles API calls for sequence upload, job status, UMAP projection, and similarity search.
+-   **api-similarity-service.js**: Manages fetching and caching the full reference dataset (`window.apiCache`). Includes logic (`findAllMatchesInCache`) to find reference sequences by accession number.
+-   **api-job-tracker.js**: Provides UI feedback for background analysis jobs.
 
-### Data Processing Layer
+### UI Layer (`src/components/ui/`)
 
-- **sequence-matcher.js**: Algorithms for finding sequence matches in the data cache
-- **cache-manager.js**: Manages the UMAP data cache and provides inspection tools
-- **coordinate-mapper.js**: Utilities for transforming and scaling coordinates
-- **debug-integration.js**: Integration of debugging utilities
+-   **api-upload-component.js**: Provides the FASTA file upload modal.
+-   **dom-utils.js**: Contains helpers, including `updateDetailsPanel` for displaying sequence information.
+-   **loading-indicator.js**: Shows/hides loading overlays.
+-   **message-handler.js**: Displays success, error, and warning messages.
+-   **status-manager.js**: Manages and displays status updates (potentially used by job tracker).
+-   **styles/ui-components.css**: Shared CSS styles for UI elements and layout.
 
-### UI Components Layer
+### Visualization Layer (`src/components/visualizations/`)
 
-- **details-panel.js**: Displays details about user sequences and similar sequences
-- **highlight-manager.js**: Manages cross-panel highlighting of sequences
-- **hover-effects.js**: Manages interactive hover behaviors between visualizations
+-   **scatter-plot.js (`createUmapScatterPlot`)**: Renders the main contextual UMAP, displaying the user sequence and similar sequences.
+-   **api-map-component.js (`createApiMap`)**: Displays the geographic distribution of the Top 100 similar reference sequences, grouped by country.
+-   **user-geo-map.js (`createUserGeoMap`)**: Displays the specific geographic locations (with jittering) of the Top 10 most similar sequences and the user sequence placeholder.
 
-### Utilities Layer
+### Cross-Cutting Concerns (Mainly in `src/index.md`)
 
-- **dom-utils.js**: Helper functions for DOM manipulation
-- **debug-utils.js**: Utilities for debugging and development
+-   **State Management**: A simple `state` object in `src/index.md` holds application state (data, component references, etc.).
+-   **Event Handling & Orchestration**: `src/index.md` handles button clicks, job polling (`setupJobPolling`), job completion (`handleJobCompletion`), and coordinates updates across components.
+-   **Cross-Highlighting**: Logic within `src/index.md` (`setupCrossHighlighting`, `highlightSequence`, `setupPointHoverEffects`) manages interactions between the UMAP, maps, and details panel.
 
 ## Developer Notes
 
-- All modules use ES6 import/export syntax
-- Backward compatibility is maintained with global function registration
-- See `dashboard-new.md` for initialization and integration of modules
+-   Focus development and review on **`src/index.md`** and the modules within `src/components/`.
+-   Modules use ES6 import/export syntax.
+-   Follow the modular pattern when adding new functionality related to the main dashboard.
 
 ## Recommended Development Workflow
 
-1. Make changes to individual modules rather than dashboard files directly
-2. Test changes in `dashboard-new.md`
-3. Follow the modular pattern when adding new functionality
-4. Refer to the refactoring documentation for architectural guidance
+1.  Make changes to individual modules within `src/components/` or the main orchestration logic in `src/index.md`.
+2.  Test changes by running `npm run dev` (or `yarn dev`) and viewing the application in the browser.
+3.  Refer to relevant documentation (Observable Framework docs and project-specific docs) for architectural guidance.

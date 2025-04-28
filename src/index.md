@@ -23,9 +23,9 @@ toc: false
 </div>
 
 <!-- UMAP Visualization Section -->
-<div class="grid grid-cols-1 gap-4 mb-4"> <!-- Changed grid-cols-2 to grid-cols-1 -->
+<div class="grid grid-cols-1 gap-4 mb-4">
   <div class="card p-4">
-    <h2 class="mb-4">Contextual UMAP</h2> <!-- Renamed from Reference Database UMAP -->
+    <h2 class="mb-4">Contextual UMAP</h2>
     <div id="scatter-container" style="width: 100%; height: 450px; position: relative; overflow: hidden;">
       <!-- Added Empty State Message -->
       <div class="empty-state-message flex flex-col items-center justify-center h-full">
@@ -43,7 +43,7 @@ toc: false
     <div class="left-map-column" style="display: flex; flex-direction: column; gap: 1rem;"> 
         <!-- Reference Map Card -->
     <div class="card p-4">
-          <h2 class="mb-4">Reference Map (Contextual)</h2> <!-- Renamed -->
+          <h2 class="mb-4">Reference Map (Contextual)</h2>
           <div id="map-container" style="width: 100%; position: relative; overflow: hidden;">
             <!-- Added Empty State Message -->
             <div class="empty-state-message flex flex-col items-center justify-center h-full" style="min-height: 550px;">
@@ -53,8 +53,8 @@ toc: false
         </div>
         <!-- Geo Map Card -->
         <div class="card p-4"> 
-          <h2 class="mb-4">Top 10 Similar Sequences - Geographic Distribution</h2> <!-- Renamed -->
-          <div id="user-geo-container" style="width: 100%; height: 400px; position: relative;">
+          <h2 class="mb-4">Top 10 Similar Sequences - Geographic Distribution</h2>
+          <div id="user-geo-container" style="width: 100%; position: relative;">
             <!-- Added Empty State Message -->
             <div class="empty-state-message flex flex-col items-center justify-center h-full">
               <p class="text-center text-gray-500 mb-4">Upload a sequence to view the specific locations of the top 10 most similar sequences.</p>
@@ -65,7 +65,7 @@ toc: false
     <!-- Right Column -->
     <div class="card p-4">
       <div class="flex justify-between items-center cursor-pointer" id="details-toggle">
-        <h2 class="mb-0">Top 10 Similar Sequences</h2> <!-- Renamed -->
+        <h2 class="mb-0">Top 10 Similar Sequences</h2>
         <!-- <span class="toggle-icon">▼</span> -->
       </div>
       <div id="details-panel" class="mt-4 p-4 border rounded" style="overflow-y: auto;">
