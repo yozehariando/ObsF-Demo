@@ -378,3 +378,95 @@
   color: #888;
   padding: 1rem;
 }
+
+/* ===== Styles Moved from src/index.md ===== */
+
+/* Card styling */
+.card {
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  transition: box-shadow 0.2s ease;
+  /* Note: Original index.md had margin: 1rem 0; here, but we removed it */
+  /* Keep general card styles, specific margins handled by layout or overrides */
+}
+
+.card:hover {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+/* Visualization containers */
+#map-container, 
+#scatter-container, 
+/* #user-scatter-container, /* This ID might be unused now */
+#user-geo-container {
+  border: 1px solid #eee;
+  border-radius: 4px;
+  overflow: hidden; /* Keep this */
+}
+
+/* Upload section styling - Button transitions */
+.btn {
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  /* Adjust grid layouts on smaller screens */
+  .grid-cols-1, .grid-cols-2, .grid-cols-3 { /* Target specific classes used */
+    grid-template-columns: 1fr;
+  }
+  
+  .col-span-2 { /* Adjust column spans */
+    grid-column: span 1;
+  }
+  
+  /* Adjust map/details grid */
+  .grid[style*="grid-template-columns: 2fr 1fr"] { /* Target the specific inline style */
+      grid-template-columns: 1fr; /* Stack columns */
+  }
+  
+  /* Ensure map containers have reasonable min-height on mobile */
+  #map-container {
+      min-height: 350px; /* Reduced height for mobile */
+  }
+   #user-geo-container {
+      height: 300px; /* Reduced height for mobile */
+  }
+  
+  #details-panel {
+      min-height: 300px; /* Reduced height */
+      max-height: 400px; /* Allow scrolling */
+  }
+  
+  .left-map-column {
+      gap: 0.5rem; /* Reduce gap */
+  }
+}
+
+/* General Grid - If used elsewhere, otherwise can be more specific */
+/* .grid {
+  display: grid;
+  height: 100%; /* Be careful with 100% height if not intended everywhere */
+/*}*/
+
+/* Specific Container Heights */
+#map-container {
+  min-height: 550px; /* Ensures minimum height for the map */
+}
+
+#details-panel {
+  /* min-height is already set above, max-height comes from ui-components.css */
+  /* We keep the min-height rule here as it was specific to index.md layout */
+   min-height: 530px; 
+}
+
+/* Layout Override for Left Map Column */
+.left-map-column .card {
+  margin: 0; /* Remove default top/bottom margin specifically for cards in this column */
+}

@@ -30,7 +30,7 @@ toc: false
       <!-- Added Empty State Message -->
       <div class="empty-state-message flex flex-col items-center justify-center h-full">
         <p class="text-center text-gray-500 mb-4">Upload a sequence to view its relationship with similar sequences in the database.</p>
-      </div>
+  </div>
     </div>
   </div>
 </div>
@@ -42,13 +42,13 @@ toc: false
     <!-- Left Column -->
     <div class="left-map-column" style="display: flex; flex-direction: column; gap: 1rem;"> 
         <!-- Reference Map Card -->
-        <div class="card p-4">
+    <div class="card p-4">
           <h2 class="mb-4">Reference Map (Contextual)</h2> <!-- Renamed -->
           <div id="map-container" style="width: 100%; position: relative; overflow: hidden;">
             <!-- Added Empty State Message -->
             <div class="empty-state-message flex flex-col items-center justify-center h-full" style="min-height: 550px;">
               <p class="text-center text-gray-500 mb-4">Upload a sequence to view the geographic distribution of similar sequences.</p>
-            </div>
+    </div>
           </div>
         </div>
         <!-- Geo Map Card -->
@@ -63,7 +63,7 @@ toc: false
         </div>
     </div>
     <!-- Right Column -->
-    <div class="card p-4"> 
+    <div class="card p-4">
       <div class="flex justify-between items-center cursor-pointer" id="details-toggle">
         <h2 class="mb-0">Top 10 Similar Sequences</h2> <!-- Renamed -->
         <!-- <span class="toggle-icon">▼</span> -->
@@ -74,70 +74,6 @@ toc: false
     </div>
   </div>
 </div>
-
-<style>
-/* Card styling */
-.card {
-  background: white;
-  border: 1px solid #eee;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  transition: box-shadow 0.2s ease;
-}
-
-.card:hover {
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-/* Visualization containers */
-#map-container, 
-#scatter-container, 
-#user-scatter-container, 
-#user-geo-container {
-  border: 1px solid #eee;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-/* Upload section styling */
-.btn {
-  transition: all 0.2s ease;
-}
-
-.btn:hover {
-  transform: translateY(-1px);
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .grid-cols-2, .grid-cols-3 {
-    grid-template-columns: 1fr;
-  }
-  
-  .col-span-2 {
-    grid-column: span 1;
-  }
-}
-
-/* Add to your existing styles */
-.grid {
-  display: grid;
-  height: 100%;
-}
-
-#map-container {
-  min-height: 550px; /* Ensures minimum height for the map */
-}
-
-#details-panel {
-  min-height: 530px; /* Ensures minimum height for details */
-}
-
-/* ADD this rule to override card margin in the left column */
-.left-map-column .card {
-  margin: 0; /* Remove default top/bottom margin */
-}
-</style>
 
 ```js
 import * as d3 from "d3";
