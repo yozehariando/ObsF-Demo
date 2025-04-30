@@ -7,7 +7,6 @@ import * as d3 from 'd3'
 
 // API configuration
 const API_BASE_URL = 'http://54.169.186.71/api/v1'
-const API_KEY = 'test_key'
 
 // Cache for sequences to avoid redundant API calls
 let cachedSequences = null
@@ -24,6 +23,26 @@ window.apiCache = {
       count: cachedSequences ? cachedSequences.length : 0,
     }
   },
+}
+
+/**
+ * Helper to create authorization headers
+ * @param {string} apiKey - The API key
+ * @returns {Object} Headers object or empty object if no key
+ */
+function getAuthHeaders(apiKey) {
+  if (!apiKey) {
+    console.warn('API Key is missing for authenticated request.')
+    // Decide how to handle: throw error or allow request without auth?
+    // Returning without the key will likely cause API errors anyway.
+    return { accept: 'application/json' }
+  }
+  // --- REVERT TO USING X-API-Key ---
+  return {
+    accept: 'application/json',
+    'X-API-Key': apiKey, // Use X-API-Key header
+  }
+  // --- END REVERT ---
 }
 
 /**
@@ -46,7 +65,6 @@ function configureApiRequest(endpoint, params = {}) {
       method: 'GET',
       headers: {
         accept: 'application/json',
-        'X-API-Key': API_KEY,
       },
     },
   }
@@ -56,9 +74,10 @@ function configureApiRequest(endpoint, params = {}) {
  * Fetch UMAP data from the API
  * @param {string} model - Model name (default: 'DNABERT-S')
  * @param {boolean} useMock - Whether to use mock data (default: false)
+ * @param {string} apiKey - The API key for authentication
  * @returns {Promise<Array>} Array of UMAP data points
  */
-async function fetchUmapData(model = 'DNABERT-S', useMock = false) {
+async function fetchUmapData(model = 'DNABERT-S', useMock = false, apiKey) {
   console.log('🔍 DEBUG: fetchUmapData called with params:', { model, useMock })
 
   // If useMock is true or we're in development environment, use mock data
@@ -69,22 +88,26 @@ async function fetchUmapData(model = 'DNABERT-S', useMock = false) {
     return mockUmapData(500) // Generate 500 mock data points
   }
 
+  // Check for API Key before making the actual call
+  if (!apiKey) {
+    console.error(
+      '❌ fetchUmapData: API Key is required to fetch reference data.'
+    )
+    // Fallback to mock data if no key is provided
+    console.warn('API Key missing, falling back to mock UMAP data.')
+    return mockUmapData(500)
+  }
+
   try {
     const apiUrl = `${API_BASE_URL}/pathtrack/umap/all?embedding_model=${encodeURIComponent(
       model
     )}&reduced=true`
     console.log(`Fetching UMAP data from ${apiUrl}`)
-    console.log('🔍 DEBUG: API request headers:', {
-      'X-API-Key': API_KEY,
-      accept: 'application/json',
-    })
+    console.log('🔍 DEBUG: API request headers:', getAuthHeaders(apiKey))
 
     const response = await fetch(apiUrl, {
       method: 'GET',
-      headers: {
-        accept: 'application/json',
-        'X-API-Key': API_KEY,
-      },
+      headers: getAuthHeaders(apiKey),
     })
 
     console.log(
@@ -164,9 +187,16 @@ async function fetchUmapData(model = 'DNABERT-S', useMock = false) {
     return records
   } catch (error) {
     console.error('Error fetching UMAP data:', error)
-    // Fall back to mock data if API fails
-    console.log('Falling back to mock UMAP data')
-    return mockUmapData(500) // Generate 500 mock data points
+    // Re-throw the error so the caller knows it failed, unless it's an auth error we already handled
+    if (error.message.includes('API Authentication Error')) {
+      // Fallback to mock only if specifically requested or unavoidable?
+      // Or just let the error propagate up to `findAllMatchesInCache`
+      console.warn('Authentication failed, cannot fetch UMAP data.')
+      throw error // Let the caller handle the auth failure
+    } else {
+      console.log('Falling back to mock UMAP data due to non-auth error.')
+      return mockUmapData(500)
+    }
   }
 }
 
@@ -362,28 +392,40 @@ function mockUmapData(count = 100) {
  * Uploads a sequence for embedding
  * @param {File} file - FASTA file to upload
  * @param {string} model - Model to use for embedding (e.g., 'DNABERT-S')
+ * @param {string} apiKey - The API key for authentication
  * @returns {Promise<Object>} Job information including job_id
  */
-async function uploadSequence(file, model) {
+async function uploadSequence(file, model, apiKey) {
+  // Check for API Key
+  if (!apiKey) {
+    console.error('❌ uploadSequence: API Key is required.')
+    throw new Error('API Key is required to upload sequence.')
+  }
   try {
     console.log(`Uploading sequence using model: ${model}`)
 
-    // Create form data
     const formData = new FormData()
     formData.append('file', file)
     formData.append('model', model)
 
-    // Make API request
     const response = await fetch(`${API_BASE_URL}/pathtrack/sequence/embed`, {
       method: 'POST',
       headers: {
-        'X-API-Key': API_KEY,
+        // --- Use X-API-Key (getAuthHeaders without 'accept') ---
+        // FormData sets Content-Type automatically, don't need 'accept' here
+        'X-API-Key': apiKey,
       },
       body: formData,
     })
 
     if (!response.ok) {
       const errorText = await response.text()
+      // Check for auth error
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(
+          `API Authentication Error (${response.status}). Please check your API Key.`
+        )
+      }
       throw new Error(
         `Failed to upload sequence: ${response.status} ${response.statusText} - ${errorText}`
       )
@@ -394,30 +436,38 @@ async function uploadSequence(file, model) {
     return data
   } catch (error) {
     console.error('Error uploading sequence:', error)
-    throw error
+    throw error // Re-throw to be caught by caller
   }
 }
 
 /**
  * Checks the status of a job
  * @param {string} jobId - Job ID to check
+ * @param {string} apiKey - The API key for authentication
  * @returns {Promise<Object>} Job status information
  */
-async function checkJobStatus(jobId) {
+async function checkJobStatus(jobId, apiKey) {
+  // Check for API Key
+  if (!apiKey) {
+    console.error(`❌ checkJobStatus (${jobId}): API Key is required.`)
+    throw new Error('API Key is required to check job status.')
+  }
   try {
     console.log(`Checking status for job: ${jobId}`)
 
-    // Make API request
     const response = await fetch(`${API_BASE_URL}/pathtrack/jobs/${jobId}`, {
       method: 'GET',
-      headers: {
-        accept: 'application/json',
-        'X-API-Key': API_KEY,
-      },
+      headers: getAuthHeaders(apiKey),
     })
 
     if (!response.ok) {
       const errorText = await response.text()
+      // Check for auth error
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(
+          `API Authentication Error (${response.status}). Please check your API Key.`
+        )
+      }
       throw new Error(
         `Failed to check job status: ${response.status} ${response.statusText} - ${errorText}`
       )
@@ -428,35 +478,49 @@ async function checkJobStatus(jobId) {
     return data
   } catch (error) {
     console.error('Error checking job status:', error)
-    throw error
+    throw error // Re-throw
   }
 }
 
 /**
  * Get UMAP projection for a job
- * @param {string} jobId - The job ID
+ * @param {string} jobId - The job ID for the uploaded sequence.
+ * @param {string} apiKey - The API key for authentication
  * @returns {Promise<Object>} - UMAP projection data
  */
-async function getUmapProjection(jobId) {
+async function getUmapProjection(jobId, apiKey) {
+  // Check for API Key
+  if (!apiKey) {
+    console.error(`❌ getUmapProjection (${jobId}): API Key is required.`)
+    throw new Error('API Key is required to get UMAP projection.')
+  }
   try {
     console.log(`Getting UMAP projection for job ${jobId}`)
 
+    // --- ALWAYS use 'job_id' as the query parameter name ---
     const url = `${API_BASE_URL}/pathtrack/sequence/umap?job_id=${encodeURIComponent(
       jobId
     )}`
+
     console.log(`Sending POST request to: ${url}`)
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': API_KEY,
+        ...getAuthHeaders(apiKey),
       },
       body: JSON.stringify({}),
     })
 
     if (!response.ok) {
       const errorText = await response.text()
+      // Check for auth error
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(
+          `API Authentication Error (${response.status}). Please check your API Key.`
+        )
+      }
       throw new Error(
         `Failed to get UMAP projection: ${response.status} - ${errorText}`
       )
@@ -485,27 +549,17 @@ async function getUmapProjection(jobId) {
     }
     // --- END DETAILED LOGGING ---
 
-    // Extract coordinates from the response
-    // The API returns coordinates in the result.coordinates array
+    // Extract coordinates
     if (
-      data &&
-      data.result &&
-      data.result.coordinates &&
+      data?.result?.coordinates &&
       Array.isArray(data.result.coordinates) &&
       data.result.coordinates.length >= 2
     ) {
       const [x, y] = data.result.coordinates
       console.log(`Extracted UMAP coordinates: (${x}, ${y})`)
-
-      return {
-        x: x,
-        y: y,
-        jobId: jobId,
-        rawData: data,
-      }
+      return { x, y, jobId: jobId, rawData: data }
     } else {
       console.warn("API response doesn't contain valid coordinates:", data)
-      // Return placeholder coordinates if not found
       return {
         x: 0,
         y: 0,
@@ -516,7 +570,7 @@ async function getUmapProjection(jobId) {
     }
   } catch (error) {
     console.error('Error getting UMAP projection:', error)
-    throw error
+    throw error // Re-throw
   }
 }
 
@@ -524,27 +578,29 @@ async function getUmapProjection(jobId) {
  * Get similar sequences for a job ID from the API.
  * @param {string} jobId - The job ID for the uploaded sequence.
  * @param {Object} options - Options for the similarity query (e.g., n_results).
+ * @param {string} apiKey - The API key for authentication
  * @returns {Promise<Object>} - The full API response object containing the results.
  */
-async function getSimilarSequences(jobId, options = {}) {
+async function getSimilarSequences(jobId, options = {}, apiKey) {
+  // Check for API Key
+  if (!apiKey) {
+    console.error(`❌ getSimilarSequences (${jobId}): API Key is required.`)
+    throw new Error('API Key is required to get similar sequences.')
+  }
   try {
     console.log(
       `API Service: Getting similar sequences for job ${jobId} with options:`,
       options
     )
 
-    // Default options (aligning with the direct call in index.md)
     const defaultOptions = {
       n_results: 10,
       min_distance: -1,
       max_year: 0,
       include_unknown_dates: false, // Match the setting used in the direct call
     }
-
-    // Merge with user options
     const queryOptions = { ...defaultOptions, ...options }
 
-    // Prepare request URL with job_id in the query string
     const url = `${API_BASE_URL}/pathtrack/sequence/similar?job_id=${encodeURIComponent(
       jobId
     )}`
@@ -553,10 +609,10 @@ async function getSimilarSequences(jobId, options = {}) {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
+        // --- Need Content-Type for POST, merge with auth ---
         'Content-Type': 'application/json',
-        'X-API-Key': API_KEY,
+        ...getAuthHeaders(apiKey), // Merge auth headers
       },
-      // Send options in the body as per the direct call structure
       body: JSON.stringify({
         n_results: queryOptions.n_results,
         min_distance: queryOptions.min_distance,
@@ -567,6 +623,12 @@ async function getSimilarSequences(jobId, options = {}) {
 
     if (!response.ok) {
       const errorText = await response.text()
+      // Check for auth error
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(
+          `API Authentication Error (${response.status}). Please check your API Key.`
+        )
+      }
       console.error(
         `API Service: Error fetching similar sequences: ${response.status} - ${errorText}`
       )
@@ -575,389 +637,12 @@ async function getSimilarSequences(jobId, options = {}) {
       )
     }
 
-    // Parse the full JSON response
     const data = await response.json()
     console.log('API Service: Similar sequences raw response:', data)
-
-    // Return the full response object as received from the API
-    // The calling function (handleJobCompletion) will handle the 'result' field
-    return data
+    return data // Return full response object
   } catch (error) {
     console.error('API Service: Error in getSimilarSequences:', error)
-    // Return a default error structure or null to indicate failure
-    // Returning null might be simpler for the caller to check
-    return null
-    // Alternatively, re-throw the error if the caller should handle it:
-    // throw error;
-  }
-}
-
-/**
- * Gets embedding data for a job
- * @param {string} jobId - Job ID to get embedding data for
- * @returns {Promise<Object>} Embedding data
- */
-async function getEmbedding(jobId) {
-  try {
-    console.log(`Getting embedding data for job: ${jobId}`)
-
-    const response = await fetch(
-      `${API_BASE_URL}/pathtrack/embedding/${jobId}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': API_KEY,
-        },
-      }
-    )
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(
-        `Error getting embedding data: ${response.status} ${errorText}`
-      )
-    }
-
-    const data = await response.json()
-    console.log(
-      `Received embedding data with ${data.embedding.length} dimensions`
-    )
-    return data
-  } catch (error) {
-    console.error('Error getting embedding data:', error)
-    throw error
-  }
-}
-
-/**
- * Fetch and cache all sequences for similarity search
- * @returns {Promise<Array>} Array of all sequences
- */
-async function fetchAllSequences() {
-  try {
-    if (cachedSequences) {
-      console.log('Using cached sequences')
-      return cachedSequences
-    }
-
-    console.log('Fetching all sequences for similarity search')
-    const sequences = await fetchUmapData()
-
-    // Cache the sequences
-    cachedSequences = sequences
-    console.log(`Cached ${sequences.length} sequences for similarity search`)
-
-    return sequences
-  } catch (error) {
-    console.error('Error fetching all sequences:', error)
-    throw error
-  }
-}
-
-/**
- * Find similar sequences for a job
- * @param {string} jobId - Job ID to find similar sequences for
- * @param {Object} options - Options for similarity search
- * @param {number} options.limit - Maximum number of similar sequences to return
- * @param {number} options.threshold - Similarity threshold (0-1)
- * @returns {Promise<Array>} Array of similar sequences
- */
-async function findSimilarSequencesForJob(jobId, options = {}) {
-  try {
-    console.log(`Finding similar sequences for job: ${jobId}`)
-
-    // Default options
-    const defaultOptions = {
-      limit: 10,
-      threshold: 0.7,
-    }
-
-    // Merge with user options
-    const searchOptions = { ...defaultOptions, ...options }
-
-    // Get embedding for the job
-    const embeddingData = await getEmbedding(jobId)
-    const userEmbedding = embeddingData.embedding
-
-    // Make sure we have all sequences
-    const allSequences = await fetchAllSequences()
-
-    // Find similar sequences
-    const similarSequences = await findSimilarSequences(
-      userEmbedding,
-      allSequences,
-      searchOptions
-    )
-
-    console.log(`Found ${similarSequences.length} similar sequences`)
-    return similarSequences
-  } catch (error) {
-    console.error('Error finding similar sequences for job:', error)
-    throw error
-  }
-}
-
-/**
- * Find similar sequences based on embedding
- * @param {Array} embedding - Embedding vector to compare against
- * @param {Array} sequences - Array of sequences to search
- * @param {Object} options - Search options
- * @returns {Promise<Array>} Array of similar sequences
- */
-async function findSimilarSequences(embedding, sequences, options) {
-  try {
-    console.log(`Finding similar sequences among ${sequences.length} sequences`)
-
-    // Get UMAP projection for the embedding
-    const umapProjection = await getUmapProjectionForEmbedding(embedding)
-
-    // Calculate similarity for each sequence
-    const similarSequences = sequences
-      .map((seq) => {
-        // Skip sequences without coordinates
-        if (
-          !seq.coordinates ||
-          !Array.isArray(seq.coordinates) ||
-          seq.coordinates.length < 2
-        ) {
-          return null
-        }
-
-        // Calculate Euclidean distance in UMAP space
-        const distance = calculateEuclideanDistance(
-          [umapProjection.x, umapProjection.y],
-          [seq.coordinates[0], seq.coordinates[1]]
-        )
-
-        // Convert distance to similarity (inverse relationship)
-        // Normalize to 0-1 range where 1 is most similar
-        const similarity = 1 / (1 + distance)
-
-        return {
-          id: seq.sequence_hash,
-          x: seq.coordinates[0],
-          y: seq.coordinates[1],
-          similarity,
-          accession: seq.accession,
-          first_country: seq.first_country,
-          first_date: seq.first_date,
-        }
-      })
-      .filter((seq) => seq !== null && seq.similarity >= options.threshold)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, options.limit)
-
-    return similarSequences
-  } catch (error) {
-    console.error('Error finding similar sequences:', error)
-    throw error
-  }
-}
-
-/**
- * Calculate Euclidean distance between two points
- * @param {Array} point1 - First point coordinates
- * @param {Array} point2 - Second point coordinates
- * @returns {number} Euclidean distance
- */
-function calculateEuclideanDistance(point1, point2) {
-  const squaredDiffs = point1.map((coord, i) => {
-    const diff = coord - point2[i]
-    return diff * diff
-  })
-
-  const sumSquaredDiffs = squaredDiffs.reduce((sum, diff) => sum + diff, 0)
-  return Math.sqrt(sumSquaredDiffs)
-}
-
-/**
- * Get UMAP projection for an embedding
- * @param {Array} embedding - Embedding vector
- * @returns {Promise<Object>} UMAP projection
- */
-async function getUmapProjectionForEmbedding(embedding) {
-  // This is a mock implementation
-  // In a real implementation, you would send the embedding to the API
-  // and get back the UMAP projection
-
-  // For now, we'll just return random coordinates
-  return {
-    x: Math.random() * 10 - 5,
-    y: Math.random() * 10 - 5,
-  }
-}
-
-/**
- * Visualizes connections between a user sequence and similar sequences
- * @param {Object} scatterComponent - The scatter plot component
- * @param {Object} userSequence - The user's sequence data
- * @param {Array} similarSequences - Array of similar sequences
- * @param {Object} options - Visualization options
- */
-function visualizeSimilarityConnections(
-  scatterComponent,
-  userSequence,
-  similarSequences,
-  options = {}
-) {
-  console.log('Visualizing similarity connections')
-
-  try {
-    // Default options
-    const defaultOptions = {
-      lineColor: 'rgba(255, 0, 0, 0.3)',
-      lineWidth: 1,
-      minSimilarity: 0,
-      maxConnections: 10,
-    }
-
-    // Merge with user options
-    const visualOptions = { ...defaultOptions, ...options }
-
-    // Check if the component is valid
-    if (!scatterComponent) {
-      console.error('Invalid scatter component')
-      return
-    }
-
-    // Get the SVG element - handle different component implementations
-    let svg
-    if (typeof scatterComponent.getSvg === 'function') {
-      // If the component has a getSvg method, use it
-      svg = scatterComponent.getSvg()
-    } else if (scatterComponent.svg) {
-      // If the component has an svg property, use it
-      svg = scatterComponent.svg
-    } else {
-      // Try to find the SVG element within the component's container
-      const containerId = scatterComponent.containerId || scatterComponent.id
-      if (containerId) {
-        const container = document.getElementById(containerId)
-        if (container) {
-          svg = d3.select(container).select('svg')
-        }
-      }
-
-      // If we still don't have an SVG, try one more approach
-      if (!svg || svg.empty()) {
-        // Try to get the container element directly
-        const container =
-          scatterComponent.container ||
-          (scatterComponent.element
-            ? d3.select(scatterComponent.element)
-            : null)
-
-        if (container) {
-          svg = container.select('svg')
-        }
-      }
-    }
-
-    // If we still couldn't find the SVG, log an error and return
-    if (!svg || (svg.empty && svg.empty())) {
-      console.error('Could not find SVG element in scatter component')
-      return
-    }
-
-    // Check if we have valid user sequence and similar sequences
-    if (
-      !userSequence ||
-      !similarSequences ||
-      !Array.isArray(similarSequences) ||
-      similarSequences.length === 0
-    ) {
-      console.warn('No valid sequences to visualize connections')
-      return
-    }
-
-    // Remove any existing connections
-    svg.selectAll('.similarity-connection').remove()
-
-    // Get the scales from the component
-    let xScale, yScale
-
-    if (typeof scatterComponent.getScales === 'function') {
-      const scales = scatterComponent.getScales()
-      xScale = scales.x
-      yScale = scales.y
-    } else {
-      // Try to access scales directly
-      xScale = scatterComponent.xScale || scatterComponent.x
-      yScale = scatterComponent.yScale || scatterComponent.y
-    }
-
-    // If we still don't have scales, try to recreate them
-    if (!xScale || !yScale) {
-      console.warn(
-        'Could not find scales in scatter component, attempting to recreate'
-      )
-
-      // Get the dimensions of the SVG
-      const width = parseInt(svg.attr('width'), 10) || 500
-      const height = parseInt(svg.attr('height'), 10) || 400
-
-      // Create simple scales based on the data
-      const allPoints = [userSequence, ...similarSequences]
-      const xExtent = d3.extent(allPoints, (d) => d.X || d.x || 0)
-      const yExtent = d3.extent(allPoints, (d) => d.Y || d.y || 0)
-
-      xScale = d3
-        .scaleLinear()
-        .domain(xExtent)
-        .range([50, width - 50])
-
-      yScale = d3
-        .scaleLinear()
-        .domain(yExtent)
-        .range([height - 50, 50])
-    }
-
-    // Filter and sort similar sequences
-    const filteredSequences = similarSequences
-      .filter((seq) => seq.similarity >= visualOptions.minSimilarity)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, visualOptions.maxConnections)
-
-    // Get user sequence coordinates
-    const userX = xScale(userSequence.X || userSequence.x || 0)
-    const userY = yScale(userSequence.Y || userSequence.y || 0)
-
-    // Create a group for the connections
-    const connectionsGroup = svg
-      .append('g')
-      .attr('class', 'similarity-connections')
-
-    // Draw connections
-    filteredSequences.forEach((seq) => {
-      // Get sequence coordinates
-      const seqX = xScale(seq.X || seq.x || 0)
-      const seqY = yScale(seq.Y || seq.y || 0)
-
-      // Calculate line opacity based on similarity
-      const opacity = seq.similarity || 0.5
-
-      // Draw the connection line
-      connectionsGroup
-        .append('line')
-        .attr('class', 'similarity-connection')
-        .attr('x1', userX)
-        .attr('y1', userY)
-        .attr('x2', seqX)
-        .attr('y2', seqY)
-        .attr('stroke', visualOptions.lineColor)
-        .attr('stroke-width', visualOptions.lineWidth)
-        .attr('stroke-opacity', opacity)
-        .attr('data-source', userSequence.id)
-        .attr('data-target', seq.id)
-        .attr('data-similarity', seq.similarity)
-    })
-
-    console.log(`Drew ${filteredSequences.length} similarity connections`)
-    return connectionsGroup
-  } catch (error) {
-    console.error('Error visualizing similarity connections:', error)
-    return null
+    throw error // Re-throw error
   }
 }
 
@@ -1001,68 +686,6 @@ function toggleSimilarityConnections(scatterComponent, show = true) {
   }
 }
 
-/**
- * Highlight a similar sequence in the visualization
- * @param {string} sequenceId - ID of the sequence to highlight
- * @param {boolean} highlight - Whether to highlight (true) or unhighlight (false)
- */
-function highlightSimilarSequence(sequenceId, highlight = true) {
-  try {
-    console.log(
-      `${highlight ? 'Highlighting' : 'Unhighlighting'} sequence: ${sequenceId}`
-    )
-
-    // Highlight in scatter plot
-    const scatterPoints = d3.selectAll('.scatter-point')
-    scatterPoints
-      .filter((d) => d && d.id === sequenceId)
-      .transition()
-      .duration(200)
-      .attr('r', highlight ? 8 : 5)
-      .style('fill', highlight ? '#ff0000' : null)
-      .style('stroke', highlight ? '#000000' : null)
-      .style('stroke-width', highlight ? 2 : 1)
-
-    // Highlight in map
-    const mapPoints = d3.selectAll('.map-point')
-    mapPoints
-      .filter((d) => d && d.id === sequenceId)
-      .transition()
-      .duration(200)
-      .attr('r', highlight ? 8 : 5)
-      .style('fill', highlight ? '#ff0000' : null)
-      .style('stroke', highlight ? '#000000' : null)
-      .style('stroke-width', highlight ? 2 : 1)
-
-    // Highlight connection lines - safely check for data structure
-    const connectionLines = d3.selectAll('.similarity-connection')
-    connectionLines
-      .filter(function (d) {
-        // Safely check if this line connects to our target sequence
-        if (!d) return false
-
-        // Different possible data structures for connection lines
-        if (d.target && d.target.id === sequenceId) return true
-        if (d.targetId === sequenceId) return true
-        if (d.id === sequenceId) return true
-
-        // For debugging
-        if (d.target) console.log('Connection line target:', d.target)
-
-        return false
-      })
-      .transition()
-      .duration(200)
-      .style('stroke-width', highlight ? 3 : 1)
-      .style('stroke-opacity', highlight ? 0.8 : 0.3)
-  } catch (error) {
-    console.error(
-      `Error ${highlight ? 'highlighting' : 'unhighlighting'} sequence:`,
-      error
-    )
-  }
-}
-
 export {
   configureApiRequest,
   fetchApiData,
@@ -1073,11 +696,5 @@ export {
   checkJobStatus,
   getUmapProjection,
   getSimilarSequences,
-  getEmbedding,
-  fetchAllSequences,
-  findSimilarSequencesForJob,
-  findSimilarSequences,
-  visualizeSimilarityConnections,
-  highlightSimilarSequence,
   toggleSimilarityConnections,
 }

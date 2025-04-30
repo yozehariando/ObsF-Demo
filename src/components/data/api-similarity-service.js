@@ -29,9 +29,9 @@ let fetchAllPromise = null
         isFetching: isFetchingAll,
       }
     },
-    forceRefresh: async function () {
+    forceRefresh: async function (apiKey) {
       try {
-        const result = await fetchAllSequences(true)
+        const result = await fetchAllSequences(true, apiKey)
         return {
           success: true,
           count: result.length,
@@ -59,56 +59,13 @@ let fetchAllPromise = null
   // Original module code starts here
 })()
 
-// Start fetching sequences as soon as the module loads
-;(function initializeCache() {
-  console.log('🚀 Initializing API cache from api-similarity-service.js xx')
-  // Start fetching in background without waiting
-  fetchAllSequences()
-    .then((data) => {
-      console.log(`✅ API cache initialized with ${data.length} sequences`)
-
-      // Make sure window.apiCache exists and is properly connected
-      if (!window.apiCache) {
-        window.apiCache = {}
-      }
-
-      // Make sure our getters always return the latest data
-      if (!window.apiCache.getSequences) {
-        window.apiCache.getSequences = function () {
-          return allSequencesCache
-        }
-      }
-
-      if (!window.apiCache.getCacheStatus) {
-        window.apiCache.getCacheStatus = function () {
-          return {
-            isCached: !!allSequencesCache,
-            count: allSequencesCache ? allSequencesCache.length : 0,
-            isFetching: isFetchingAll,
-          }
-        }
-      }
-
-      // Dispatch an event to notify other components that the cache is ready
-      const cacheReadyEvent = new CustomEvent('api-cache-ready', {
-        detail: { count: data.length },
-      })
-      window.dispatchEvent(cacheReadyEvent)
-
-      // Also set a flag for components that don't use events
-      window.apiCacheReady = true
-    })
-    .catch((error) => {
-      console.error('❌ Error initializing API cache:', error)
-    })
-})()
-
 /**
  * Fetch all sequences from the API and store them for similarity search
  * @param {boolean} forceRefresh - Whether to force a refresh of the cache
+ * @param {string} apiKey - The API key for authentication
  * @returns {Promise<Array>} - Promise resolving to the array of all sequences
  */
-export async function fetchAllSequences(forceRefresh = false) {
+export async function fetchAllSequences(forceRefresh = false, apiKey) {
   // Enhanced debugging
   console.log(
     '🔍 DEBUG: fetchAllSequences called with forceRefresh =',
@@ -136,6 +93,14 @@ export async function fetchAllSequences(forceRefresh = false) {
     return allSequencesCache
   }
 
+  // Check for API Key before starting fetch
+  if (!apiKey) {
+    console.error(
+      '❌ fetchAllSequences: API Key is required to fetch reference data.'
+    )
+    throw new Error('API Key is required to fetch reference dataset.')
+  }
+
   // Set up the fetching state
   isFetchingAll = true
 
@@ -145,7 +110,7 @@ export async function fetchAllSequences(forceRefresh = false) {
       console.log('Fetching all sequences for similarity search...')
 
       // Use the fetchUmapData function from api-service.js
-      const allData = await fetchUmapData()
+      const allData = await fetchUmapData('DNABERT-S', false, apiKey)
 
       // Enhanced debugging - log API response
       console.log('🔍 DEBUG: API response for fetchUmapData:', {
@@ -161,6 +126,15 @@ export async function fetchAllSequences(forceRefresh = false) {
       // Reset fetching state
       isFetchingAll = false
 
+      // Dispatch an event to notify other components that the cache is ready
+      const cacheReadyEvent = new CustomEvent('api-cache-ready', {
+        detail: { count: allData.length },
+      })
+      window.dispatchEvent(cacheReadyEvent)
+
+      // Also set a flag for components that don't use events
+      window.apiCacheReady = true
+
       // Resolve with the data
       resolve(allData)
     } catch (error) {
@@ -168,16 +142,11 @@ export async function fetchAllSequences(forceRefresh = false) {
 
       // Reset fetching state
       isFetchingAll = false
+      allSequencesCache = null // Clear cache on error
+      window.apiCacheReady = false // Reset flag
 
-      // Generate mock data as fallback
-      console.log('Generating mock data as fallback')
-      const mockData = generateMockData(100)
-
-      // Store mock data in cache
-      allSequencesCache = mockData
-
-      // Resolve with mock data
-      resolve(mockData)
+      // Reject the promise so the caller knows it failed
+      reject(error)
     }
   })
 

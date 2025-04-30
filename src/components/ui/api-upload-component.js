@@ -6,7 +6,7 @@
 /**
  * Creates a modal dialog for FASTA file upload
  * @param {Object} options - Configuration options
- * @param {Function} options.onUpload - Callback when file is uploaded
+ * @param {Function} options.onUpload - Callback when file is uploaded, receives (file, model, apiKey)
  * @param {Function} options.onCancel - Callback when upload is canceled
  * @returns {Object} Modal controller object
  */
@@ -31,7 +31,7 @@ function createUploadModal(options = {}) {
   modalContent.style.backgroundColor = 'white'
   modalContent.style.borderRadius = '5px'
   modalContent.style.padding = '20px'
-  modalContent.style.width = '500px'
+  modalContent.style.width = '550px'
   modalContent.style.maxWidth = '90%'
   modalContent.style.maxHeight = '90%'
   modalContent.style.overflowY = 'auto'
@@ -129,34 +129,65 @@ function createUploadModal(options = {}) {
     }
   })
 
+  // Create API Key Input Section
+  const apiKeyContainer = document.createElement('div')
+  apiKeyContainer.className = 'api-key-container'
+  apiKeyContainer.style.marginBottom = '20px'
+
+  const apiKeyLabel = document.createElement('label')
+  apiKeyLabel.htmlFor = 'api-key-input'
+  apiKeyLabel.textContent = 'API Key:'
+  apiKeyLabel.style.display = 'block'
+  apiKeyLabel.style.marginBottom = '5px'
+  apiKeyLabel.style.fontWeight = 'bold'
+
+  const apiKeyInput = document.createElement('input')
+  apiKeyInput.type = 'password'
+  apiKeyInput.id = 'api-key-input'
+  apiKeyInput.name = 'apiKey'
+  apiKeyInput.required = true
+  apiKeyInput.placeholder = 'Enter your API key'
+  apiKeyInput.style.width = '100%'
+  apiKeyInput.style.padding = '8px'
+  apiKeyInput.style.borderRadius = '4px'
+  apiKeyInput.style.border = '1px solid #ccc'
+  apiKeyInput.style.boxSizing = 'border-box'
+
+  apiKeyContainer.appendChild(apiKeyLabel)
+  apiKeyContainer.appendChild(apiKeyInput)
+
   // Create model selection
   const modelSelectionContainer = document.createElement('div')
   modelSelectionContainer.className = 'model-selection'
   modelSelectionContainer.style.marginBottom = '20px'
 
   const modelLabel = document.createElement('label')
+  modelLabel.htmlFor = 'model-select'
   modelLabel.textContent = 'Select Model:'
   modelLabel.style.display = 'block'
   modelLabel.style.marginBottom = '5px'
   modelLabel.style.fontWeight = 'bold'
 
   const modelSelect = document.createElement('select')
+  modelSelect.id = 'model-select'
   modelSelect.className = 'model-select'
   modelSelect.style.width = '100%'
   modelSelect.style.padding = '8px'
   modelSelect.style.borderRadius = '4px'
   modelSelect.style.border = '1px solid #ccc'
+  modelSelect.disabled = true
+  modelSelect.style.backgroundColor = '#e9ecef'
+  modelSelect.style.cursor = 'not-allowed'
 
-  const models = [
-    { value: 'DNABERT-S', label: 'DNABERT-S (Recommended)' },
-    { value: 'DNABERT-2', label: 'DNABERT-2' },
-    { value: 'ESM-2', label: 'ESM-2' },
-  ]
+  const models = [{ value: 'DNABERT-S', label: 'DNABERT-S (Default)' }]
 
-  models.forEach((model) => {
+  models.forEach((model, index) => {
     const option = document.createElement('option')
     option.value = model.value
     option.textContent = model.label
+    if (model.value === 'DNABERT-S') {
+      option.selected = true
+    }
     modelSelect.appendChild(option)
   })
 
@@ -204,10 +235,18 @@ function createUploadModal(options = {}) {
   uploadButton.disabled = true
   uploadButton.style.opacity = '0.5'
   uploadButton.addEventListener('click', () => {
+    const apiKey = apiKeyInput.value.trim()
+    const model = modelSelect.value
+
+    if (!apiKey) {
+      alert('API Key is required.')
+      apiKeyInput.focus()
+      return
+    }
+
     if (selectedFile) {
       if (options.onUpload) {
-        const model = modelSelect.value
-        options.onUpload(selectedFile, model)
+        options.onUpload(selectedFile, model, apiKey)
       }
       closeModal()
     }
@@ -219,6 +258,7 @@ function createUploadModal(options = {}) {
   // Assemble modal
   modalContent.appendChild(modalHeader)
   modalContent.appendChild(uploadArea)
+  modalContent.appendChild(apiKeyContainer)
   modalContent.appendChild(modelSelectionContainer)
   modalContent.appendChild(fileInfoContainer)
   modalContent.appendChild(actionButtons)

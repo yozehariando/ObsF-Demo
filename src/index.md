@@ -147,7 +147,7 @@ function setupJobPolling(jobId, intervalMs = 3000) {
   const intervalId = setInterval(async () => {
     console.log(`🕒 Polling job status for ${jobId}...`);
     try {
-      const statusResponse = await checkJobStatus(jobId);
+      const statusResponse = await checkJobStatus(jobId, state.apiKey);
       const status = statusResponse?.status;
       const result = statusResponse?.result; // Or however the final data is nested
 
@@ -217,7 +217,8 @@ const state = {
   jobPollingIntervals: {},
   stopPollingFunctions: {},
   similarSequences: [],
-  userGeoMap: null
+  userGeoMap: null,
+  apiKey: null // <-- Add apiKey state
 };
 
 /**
@@ -231,29 +232,40 @@ async function handleJobCompletion(jobId, jobData) {
   console.log(`🚀 Phase 3: handleJobCompletion started for job ${jobId}`);
   let userSequence = null; // Define userSequence here to be accessible in finally block
 
+  // --- Ensure API Key is available ---
+  if (!state.apiKey) {
+      console.error(`❌ Cannot process job ${jobId}: API Key is not set.`);
+      showErrorMessage("API Key missing, cannot process results.");
+      hideLoadingIndicator();
+      return;
+  }
+
   try {
     showLoadingIndicator("Processing sequence results...");
     
     // --- Step 1: Get User Projection ---
-    let embeddingId = jobId;
+    const umapProjection = await getUmapProjection(jobId, state.apiKey); // Pass original jobId
+
+    // --- Determine embeddingId for userSequence object AFTER getting projection ---
+    let embeddingId = jobId; // Default to jobId
     if (jobData?.embedding_id) embeddingId = jobData.embedding_id;
     else if (jobData?.result?.embedding_id) embeddingId = jobData.result.embedding_id;
-    console.log(`Using embedding ID: ${embeddingId}`);
+    console.log(`Using embedding ID for user object: ${embeddingId}`); 
     
-    const umapProjection = await getUmapProjection(embeddingId);
     console.log("UMAP projection response:", umapProjection);
     
+    // --- Rest of userSequence creation using umapProjection.x/y and embeddingId ---
     let userX = 0, userY = 0;
     if (umapProjection && typeof umapProjection.x === 'number' && typeof umapProjection.y === 'number' && !umapProjection.isPlaceholder) {
       userX = umapProjection.x;
       userY = umapProjection.y;
       console.log(`User sequence coordinates from API: (${userX}, ${userY})`);
     } else {
-      console.warn("Valid coordinates not found in umapProjection object returned by getUmapProjection, using fallback (0, 0). Object:", umapProjection);
+      console.warn("Valid coordinates not found for user sequence, using fallback (0, 0).");
     }
     
     userSequence = {
-      id: embeddingId, // Use embedding ID which should be unique
+      id: embeddingId, // Use embedding ID for the object ID
       x: userX,
       y: userY,
       label: "Your Sequence",
@@ -262,12 +274,12 @@ async function handleJobCompletion(jobId, jobData) {
     };
     console.log("Created user sequence object:", userSequence);
     
-    // --- Step 3: Fetch Similar Sequences (N=100) ---
+    // --- Step 3: Fetch Similar Sequences (Still uses original jobId) ---
     console.log(`Fetching Top 100 similar sequences for job ID: ${jobId}`);
     showLoadingIndicator("Fetching similar sequences..."); // Update loading message
     const similarOptions100 = { n_results: 100 }; // Fetch 100
     // const similarOptions100 = { n_results: 10 }; // Fetch 100
-    const similarSequencesResponse100 = await getSimilarSequences(jobId, similarOptions100);
+    const similarSequencesResponse100 = await getSimilarSequences(jobId, similarOptions100, state.apiKey); // Pass original jobId
 
     // --- Step 4: Handle API Failures ---
     if (!similarSequencesResponse100 || !similarSequencesResponse100.result) {
@@ -300,10 +312,10 @@ async function handleJobCompletion(jobId, jobData) {
     ];
     console.log(`Extracted ${allAccessionNumbers.length} unique accession numbers for coordinate lookup.`);
 
-    // --- Step 2 & 6: Ensure Cache and Lookup Coordinates ---
+    // --- Step 2 & 6: Ensure Cache and Lookup Coordinates (Pass API Key) ---
     // Call findAllMatchesInCache - this function now handles loading the cache if needed (Phase 2)
     showLoadingIndicator("Finding sequences in reference dataset..."); // Update loading message
-    const matchedItems = await findAllMatchesInCache(allAccessionNumbers);
+    const matchedItems = await findAllMatchesInCache(allAccessionNumbers, state.apiKey); // Pass state.apiKey
     console.log(`Found ${matchedItems.length} matches with coordinates in central cache.`);
 
     if (matchedItems.length === 0 && allAccessionNumbers.length > 0) {
@@ -953,7 +965,7 @@ function createLegend(container, items, title = 'Legend') {
  * @param {Array<string>} accessionNumbers - Array of accession numbers to search for
  * @returns {Array<Object>} - Array of objects with coordinates for the matched sequences
  */
-async function findAllMatchesInCache(accessionNumbers) {
+async function findAllMatchesInCache(accessionNumbers, apiKey) {
   console.log(`🔧 CENTRAL CACHE SEARCH: Searching for ${accessionNumbers.length} sequences.`);
 
   // --- Phase 2: On-Demand Cache Load ---
@@ -961,22 +973,32 @@ async function findAllMatchesInCache(accessionNumbers) {
 
   if (!centralCache || centralCache.length === 0) {
     console.log("⏳ CENTRAL CACHE SEARCH: Cache is empty. Fetching reference data...");
-    showLoadingIndicator("Loading reference dataset for context..."); // Inform user
+    // --- Ensure API Key is available before fetching cache ---
+    if (!apiKey) {
+        console.error("❌ CENTRAL CACHE SEARCH: Cannot fetch reference data - API Key missing.");
+        showErrorMessage("API Key missing, cannot load reference dataset.");
+        return []; // Cannot proceed without key
+    }
+    showLoadingIndicator("Loading reference dataset for context..."); 
     try {
-      // Assuming fetchAllSequences handles caching internally via window.apiCache.setSequences
-      await fetchAllSequences(); 
-      centralCache = window.apiCache.getSequences(); // Re-fetch the cache reference
+      // --- Pass apiKey to fetchAllSequences ---
+      await fetchAllSequences(false, apiKey); // Pass forceRefresh=false and apiKey
+      centralCache = window.apiCache.getSequences(); 
       console.log(`✅ CENTRAL CACHE SEARCH: Reference data fetched. Cache size: ${centralCache?.length || 0}`);
       if (!centralCache || centralCache.length === 0) {
          throw new Error("fetchAllSequences completed but cache is still empty.");
       }
     } catch (error) {
       console.error("❌ CENTRAL CACHE SEARCH: Failed to fetch reference data:", error);
-      showErrorMessage("Failed to load reference data needed for visualization. Some sequences may not appear.");
+       if (error.message.includes('401') || error.message.includes('403')) {
+            showErrorMessage("Invalid API Key. Failed to load reference data.");
+       } else {
+            showErrorMessage("Failed to load reference data needed for visualization.");
+       }
       hideLoadingIndicator();
       return []; // Cannot proceed without the cache
     } finally {
-      hideLoadingIndicator();
+      hideLoadingIndicator(); // Ensure it's hidden even on error
     }
   } else {
      console.log(`👍 CENTRAL CACHE SEARCH: Using existing cache with ${centralCache.length} items.`);
@@ -1121,14 +1143,25 @@ uploadButton.addEventListener('click', () => {
 
   // Create and show the upload modal
   const uploadModal = createUploadModal({
-    onUpload: async (file, model) => {
+    onUpload: async (file, model, apiKey) => {
       console.log("🚀 onUpload callback started."); 
       try {
+        // --- Validate & Store API Key ---
+        if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
+            console.error("❌ API Key missing or invalid from modal.");
+            showErrorMessage("API Key is required. Please enter a valid key.");
+            // Re-open modal or indicate error differently? For now, just stop.
+            return;
+        }
+        state.apiKey = apiKey.trim(); // Store the key
+        console.log("🔑 API Key stored in state.");
+        // --- End API Key Handling ---
+
         console.log(`Processing file: ${file.name}, model: ${model}`);
-        showLoadingIndicator("Uploading sequence..."); // Should see this
+        showLoadingIndicator("Uploading sequence...");
 
         console.log("Calling uploadSequence API..."); 
-        const uploadResult = await uploadSequence(file, model);
+        const uploadResult = await uploadSequence(file, model, state.apiKey);
         console.log("uploadSequence API finished. Result:", uploadResult); 
 
         if (!uploadResult || !uploadResult.job_id) {
@@ -1174,8 +1207,13 @@ uploadButton.addEventListener('click', () => {
       } catch (error) {
         console.error("❌ Error inside onUpload callback:", error); 
         hideLoadingIndicator();
-        // Use showErrorMessage from message-handler.js
-        showErrorMessage(`Error during upload process: ${error.message}`);
+         // Check for auth errors specifically
+         if (error.message.includes('401') || error.message.includes('403')) {
+            showErrorMessage("Invalid API Key. Upload failed.");
+            state.apiKey = null; // Clear invalid key?
+         } else {
+            showErrorMessage(`Error during upload process: ${error.message}`);
+         }
       }
     },
     onCancel: () => {
@@ -1189,5 +1227,58 @@ uploadButton.addEventListener('click', () => {
   } else {
        console.error("❌ createUploadModal function did NOT return a modal object!");
   }
+});
+
+// --- Reset Button Listener ---
+const resetButton = document.getElementById('reset-user-sequences');
+resetButton?.addEventListener('click', () => {
+  console.log("🔄 Reset Analysis button clicked!");
+  // Clear state related to the analysis
+  state.userSequences = [];
+  state.similarSequences = [];
+  state.selectedPoint = null;
+  state.apiKey = null; // Clear API key on reset
+
+  // Stop any active polling
+  if (state.stopPollingFunctions) {
+      Object.values(state.stopPollingFunctions).forEach(stopFunc => stopFunc());
+      state.stopPollingFunctions = {};
+  }
+
+  // Destroy or reset visualizations
+  if (state.scatterComponent?.destroy) state.scatterComponent.destroy();
+  else if (state.scatterComponent?.updateScatterPlot) state.scatterComponent.updateScatterPlot([], null); // Reset with empty data
+
+  if (state.mapComponent?.destroy) state.mapComponent.destroy();
+  else if (state.mapComponent?.updateMap) state.mapComponent.updateMap([]); // Reset with empty data
+
+  if (state.userGeoMap?.destroy) state.userGeoMap.destroy();
+  else if (state.userGeoMap?.updateMap) state.userGeoMap.updateMap(null, []); // Reset with empty data
+
+  // Clear the details panel
+  const detailsPanel = document.getElementById('details-panel');
+  if (detailsPanel) {
+      detailsPanel.innerHTML = '<p class="text-center text-gray-500">Upload a sequence to view details of the most similar matches.</p>';
+  }
+
+  // Show empty state messages again (optional, could just clear graphs)
+  document.querySelectorAll('.empty-state-message').forEach(el => el.style.display = 'flex');
+  // Clear job tracker if it exists
+  state.jobTracker?.destroy();
+  state.jobTracker = null;
+
+
+  // Optionally remove visualization containers content if destroy methods don't exist
+   document.getElementById('scatter-container').innerHTML = '<div class="empty-state-message flex flex-col items-center justify-center h-full"><p class="text-center text-gray-500 mb-4">Upload a sequence to view its relationship...</p></div>';
+   document.getElementById('map-container').innerHTML = '<div class="empty-state-message flex flex-col items-center justify-center h-full" style="min-height: 550px;"><p class="text-center text-gray-500 mb-4">Upload a sequence to view the geographic distribution...</p></div>';
+   document.getElementById('user-geo-container').innerHTML = '<div class="empty-state-message flex flex-col items-center justify-center h-full"><p class="text-center text-gray-500 mb-4">Upload a sequence to view the specific locations...</p></div>';
+
+  // Re-initialize state pointers (if needed, though resetting data might suffice)
+  state.scatterComponent = null;
+  state.mapComponent = null;
+  state.userGeoMap = null;
+
+
+  showInfoMessage("Analysis reset. Ready for new upload.");
 });
 
