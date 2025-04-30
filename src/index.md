@@ -109,7 +109,7 @@ import {
 import { 
   createUploadModal, 
   } from './components/ui/api-upload-component.js';
-import { createJobTracker } from './components/data/api-job-tracker.js';
+import { createJobTracker } from './components/ui/api-job-tracker.js';
 import {
   fetchAllSequences,
 } from './components/data/api-similarity-service.js';
@@ -120,6 +120,11 @@ import { createUserGeoMap } from "./components/visualizations/user-geo-map.js";
 if (typeof FileAttachment !== 'undefined') {
   window.FileAttachment = FileAttachment;
 }
+
+// --- Configuration for Simulated Delay ---
+const SIMULATE_PROCESSING_DELAY = false; // Set to false to disable delay
+const SIMULATED_DELAY_MS = 120000; // 120,000 ms = 2 minutes
+// --- End Configuration ---
 
 // --- ADD THIS FUNCTION DEFINITION ---
 /**
@@ -145,43 +150,66 @@ function setupJobPolling(jobId, intervalMs = 3000) {
   console.log(`🕒 Setting up polling for job ${jobId} every ${intervalMs}ms`);
 
   const intervalId = setInterval(async () => {
+    if (!state.apiKey) { /* ... */ return; }
     console.log(`🕒 Polling job status for ${jobId}...`);
     try {
+      // --- Get ACTUAL status from API ---
       const statusResponse = await checkJobStatus(jobId, state.apiKey);
-      const status = statusResponse?.status;
-      const result = statusResponse?.result; // Or however the final data is nested
+      let actualStatus = statusResponse?.status;
+      const result = statusResponse?.result;
+      let displayStatus = actualStatus; // Status to show in UI
 
-      console.log(`🕒 Job ${jobId} status: ${status}`);
+      console.log(`🕒 Job ${jobId} actual API status: ${actualStatus}`);
 
-      // Update Job Tracker UI if it exists
+      // --- Simulation Logic ---
+      if (SIMULATE_PROCESSING_DELAY && actualStatus === 'completed') {
+          if (!state.simulatedCompletionTimes[jobId]) {
+              // First time seeing 'completed', start simulation
+              state.simulatedCompletionTimes[jobId] = Date.now();
+              console.log(`🕒 SIMULATION: Job ${jobId} actually completed. Starting ${SIMULATED_DELAY_MS / 1000}s simulated delay.`);
+              displayStatus = 'running'; // Report 'running' to UI
+        } else {
+              // Simulation already started, check if delay is over
+              const elapsed = Date.now() - state.simulatedCompletionTimes[jobId];
+              if (elapsed >= SIMULATED_DELAY_MS) {
+                  console.log(`🕒 SIMULATION: Job ${jobId} simulated delay finished.`);
+                  displayStatus = 'completed'; // Report real status now
+                  delete state.simulatedCompletionTimes[jobId]; // Clean up
+              } else {
+                  console.log(`🕒 SIMULATION: Job ${jobId} delay ongoing (${((SIMULATED_DELAY_MS - elapsed) / 1000).toFixed(1)}s remaining).`);
+                  displayStatus = 'running'; // Continue reporting 'running'
+              }
+          }
+      }
+      // --- End Simulation Logic ---
+
+      // Update Job Tracker UI based on displayStatus
       if (state.jobTracker && state.jobTracker.updateStatus) {
-          state.jobTracker.updateStatus(status, result); // Pass result for potential progress info
+          state.jobTracker.updateStatus(displayStatus, result); 
       }
 
-      if (status === 'completed') {
-        console.log(`✅ Job ${jobId} completed.`);
-        clearInterval(intervalId); // Stop polling
-        delete state.stopPollingFunctions[jobId]; // Clean up stop function reference
-        await handleJobCompletion(jobId, statusResponse); // Pass the full response
-      } else if (status === 'failed') {
+      // Process based on displayStatus
+      if (displayStatus === 'completed') {
+        console.log(`✅ Job ${jobId} processing started (after real/simulated completion).`);
+        clearInterval(intervalId); 
+        delete state.stopPollingFunctions[jobId]; 
+        if (state.jobTracker) state.jobTracker.updateStatus('processing results'); 
+        await handleJobCompletion(jobId, statusResponse); // Pass original response
+      } else if (displayStatus === 'failed') { // Use displayStatus here too
         console.error(`❌ Job ${jobId} failed.`);
-        clearInterval(intervalId); // Stop polling
+        clearInterval(intervalId); 
         delete state.stopPollingFunctions[jobId];
-        // Use showErrorMessage from message-handler.js
-        showErrorMessage(`Analysis job ${jobId} failed: ${result?.error || 'Unknown error'}`);
-        hideLoadingIndicator(); // Ensure loading indicator is hidden on failure
-         // Update Job Tracker UI to show error state
-         if (state.jobTracker && state.jobTracker.updateStatus) {
-            state.jobTracker.updateStatus(status, result);
-         }
+        hideLoadingIndicator(); 
       }
       // If status is 'pending' or 'running', do nothing and let the interval continue
+
     } catch (error) {
-      console.error(`❌ Error polling job status for ${jobId}:`, error);
-      showErrorMessage(`Error checking job status: ${error.message}`);
-      // Optionally stop polling on error, or let it retry
-      // clearInterval(intervalId); 
-      // delete state.stopPollingFunctions[jobId]; 
+      // ... error handling ...
+       if (state.jobTracker) state.jobTracker.updateStatus('failed', { error: error.message });
+       clearInterval(intervalId); 
+       delete state.stopPollingFunctions[jobId]; 
+       delete state.simulatedCompletionTimes[jobId]; // Clean up simulation on error
+       hideLoadingIndicator(); 
     }
   }, intervalMs);
 
@@ -189,7 +217,8 @@ function setupJobPolling(jobId, intervalMs = 3000) {
   const stopPolling = () => {
     console.log(`🚫 Manually stopping polling for job ${jobId}`);
     clearInterval(intervalId);
-     delete state.stopPollingFunctions[jobId];
+    delete state.stopPollingFunctions[jobId];
+    delete state.simulatedCompletionTimes[jobId]; // Clean up simulation on manual stop
   };
 
    // Store the stop function globally ONLY IF NOT ALREADY STORED
@@ -218,7 +247,8 @@ const state = {
   stopPollingFunctions: {},
   similarSequences: [],
   userGeoMap: null,
-  apiKey: null // <-- Add apiKey state
+  apiKey: null, // <-- Add apiKey state
+  simulatedCompletionTimes: {} // <-- Add tracking for simulation
 };
 
 /**
@@ -455,10 +485,20 @@ async function handleJobCompletion(jobId, jobData) {
         showWarningMessage(`Note: Coordinates were not found for ${top100SimilarRaw.length - contextualUmapData.length} similar sequences.`);
     }
 
+    // --- Update tracker to 'Completed' ---
+    if (state.jobTracker) state.jobTracker.updateStatus('Completed'); 
 
   } catch (error) {
     console.error("❌ Error during handleJobCompletion:", error);
-    showErrorMessage("An error occurred while processing the sequence results.");
+    // --- Update tracker on failure ---
+    if (state.jobTracker) state.jobTracker.updateStatus('failed', { error: error.message });
+    
+    // Show specific error message
+    if (error.message.includes('401') || error.message.includes('403')) {
+         showErrorMessage("Invalid API Key. Failed to process results.");
+    } else {
+        showErrorMessage("An error occurred while processing the sequence results.");
+    }
     // Attempt to clear/reset visualizations to a safe state if userSequence exists
     if (state.scatterComponent && userSequence) {
       state.scatterComponent.updateScatterPlot([], userSequence);
@@ -467,7 +507,6 @@ async function handleJobCompletion(jobId, jobData) {
     if (state.mapComponent) state.mapComponent.updateMap([]);
     if (state.userGeoMap && userSequence) state.userGeoMap.updateMap(userSequence, []);
      if (userSequence) updateDetailsWithSimilarSequences(userSequence, []);
-
 
   } finally {
     hideLoadingIndicator();
@@ -1091,51 +1130,6 @@ async function findAllMatchesInCache(accessionNumbers, apiKey) {
   return foundItems;
 }
 
-async function handleSimilarSequences(jobId, similarSequencesResponse) {
-  try {
-    console.log("Processing similar sequences for job:", jobId);
-    console.log("Similar sequences response:", similarSequencesResponse);
-
-    if (similarSequencesResponse && similarSequencesResponse.result) {
-      // Update geo map visualization
-      if (state.userGeoMap && state.userGeoMap.updateMap) {
-        console.log("🌍 Updating geo map with similar sequences");
-        console.log("Number of similar sequences:", similarSequencesResponse.result.length);
-        
-        // Create user sequence with geo data from the first similar sequence
-        // This is valid since similar sequences are from the same location as the user sequence
-        const userSequenceWithGeo = {
-          id: jobId,
-          label: "Your Sequence",
-          isUserSequence: true,
-          metadata: {
-            lat_lon: similarSequencesResponse.result[0]?.metadata?.lat_lon
-          }
-        };
-        
-        console.log("User sequence with geo:", userSequenceWithGeo);
-        console.log("First similar sequence metadata:", similarSequencesResponse.result[0]?.metadata);
-        
-        // Update the map with the sequences
-        state.userGeoMap.updateMap(userSequenceWithGeo, similarSequencesResponse.result);
-      } else {
-        console.warn("User geo map component not found or updateMap method not available");
-      }
-    } else {
-      console.warn("No similar sequences data available in the response");
-    }
-
-  } catch (error) {
-    console.error("Error in handleSimilarSequences:", error);
-    console.error("Error details:", {
-      jobId,
-      similarSequencesResponseAvailable: !!similarSequencesResponse,
-      similarSequencesType: typeof similarSequencesResponse
-    });
-    showErrorMessage("Failed to process similar sequences");
-  }
-}
-
 // Set up the upload button
 const uploadButton = document.getElementById('upload-fasta-button');
 uploadButton.addEventListener('click', () => {
@@ -1238,6 +1232,7 @@ resetButton?.addEventListener('click', () => {
   state.similarSequences = [];
   state.selectedPoint = null;
   state.apiKey = null; // Clear API key on reset
+  state.simulatedCompletionTimes = {}; // <-- Clear simulation state on reset
 
   // Stop any active polling
   if (state.stopPollingFunctions) {
