@@ -474,3 +474,27 @@
 #user-geo-container {
   min-height: 430px;
 }
+
+/* Basic styling for zoom controls */
+.zoom-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px; /* Adjust spacing */
+  z-index: 10; /* Ensure controls are above SVG content */
+  background-color: rgba(255, 255, 255, 0.8); /* Slight background */
+  padding: 5px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.zoom-controls button {
+  /* Use existing btn styles or add specifics */
+  min-width: 30px; /* Ensure buttons have some width */
+  padding: 2px 6px; /* Adjust padding */
+  font-size: 14px; /* Adjust font size */
+  line-height: 1.2;
+  cursor: pointer;
+}

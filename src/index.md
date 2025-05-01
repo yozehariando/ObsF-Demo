@@ -30,7 +30,14 @@ toc: false
       <!-- Added Empty State Message -->
       <div class="empty-state-message flex flex-col items-center justify-center h-full">
         <p class="text-center text-gray-500 mb-4">Upload a sequence to view its relationship with similar sequences in the database.</p>
-  </div>
+      </div>
+      <!-- <<< START ZOOM CONTROLS >>> -->
+      <div class="zoom-controls" style="position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 5px; z-index: 10;">
+        <button id="zoom-in-scatter" class="btn btn-sm btn-outline-secondary" title="Zoom In">+</button>
+        <button id="zoom-out-scatter" class="btn btn-sm btn-outline-secondary" title="Zoom Out">-</button>
+        <button id="reset-scatter" class="btn btn-sm btn-outline-secondary" title="Reset Zoom">Reset</button>
+      </div>
+      <!-- <<< END ZOOM CONTROLS >>> -->
     </div>
   </div>
 </div>
@@ -251,6 +258,65 @@ const state = {
   simulatedCompletionTimes: {} // <-- Add tracking for simulation
 };
 
+// <<<--- START NEW FUNCTION DEFINITION --- >>>
+/**
+ * Sets up zoom control buttons for a given visualization component.
+ * Assumes the component exposes `svg` and `zoomBehavior` properties.
+ * @param {Object} componentInstance - The visualization component instance (e.g., state.scatterComponent).
+ * @param {Object} buttonIds - An object containing the IDs for zoom in, out, and reset buttons.
+ *                             Example: { zoomIn: 'zoom-in-scatter', zoomOut: 'zoom-out-scatter', reset: 'reset-scatter' }
+ */
+function setupZoomControls(componentInstance, buttonIds) {
+  if (!componentInstance || !componentInstance.svg || !componentInstance.zoomBehavior) {
+    console.warn("Cannot setup zoom controls: Component instance, SVG, or zoomBehavior is missing.", componentInstance);
+    return;
+  }
+  if (!buttonIds || !buttonIds.zoomIn || !buttonIds.zoomOut || !buttonIds.reset) {
+    console.warn("Cannot setup zoom controls: Button IDs are missing.", buttonIds);
+    return;
+  }
+
+  const svgNode = componentInstance.svg.node(); // Get the actual DOM node
+  const zoomBehavior = componentInstance.zoomBehavior;
+
+  const zoomInButton = document.getElementById(buttonIds.zoomIn);
+  const zoomOutButton = document.getElementById(buttonIds.zoomOut);
+  const resetButton = document.getElementById(buttonIds.reset);
+
+  if (!zoomInButton || !zoomOutButton || !resetButton) {
+    console.warn("Cannot setup zoom controls: One or more buttons not found in the DOM.", buttonIds);
+    return;
+  }
+
+  // --- Remove existing listeners first to prevent duplicates ---
+  // Simple approach: Clone and replace the node to remove all listeners
+  const newZoomInButton = zoomInButton.cloneNode(true);
+  zoomInButton.parentNode.replaceChild(newZoomInButton, zoomInButton);
+  const newZoomOutButton = zoomOutButton.cloneNode(true);
+  zoomOutButton.parentNode.replaceChild(newZoomOutButton, zoomOutButton);
+  const newResetButton = resetButton.cloneNode(true);
+  resetButton.parentNode.replaceChild(newResetButton, resetButton);
+
+  // --- Add new listeners ---
+  newZoomInButton.addEventListener('click', () => {
+    // Re-select the node with D3 before calling transition
+    d3.select(svgNode).transition().duration(250).call(zoomBehavior.scaleBy, 1.3);
+  });
+
+  newZoomOutButton.addEventListener('click', () => {
+    // Re-select the node with D3 before calling transition
+    d3.select(svgNode).transition().duration(250).call(zoomBehavior.scaleBy, 1 / 1.3);
+  });
+
+  newResetButton.addEventListener('click', () => {
+    // Re-select the node with D3 before calling transition
+    d3.select(svgNode).transition().duration(750).call(zoomBehavior.transform, d3.zoomIdentity);
+  });
+
+  console.log(`Zoom controls setup complete for buttons: ${Object.values(buttonIds).join(', ')}`);
+}
+// <<<--- END NEW FUNCTION DEFINITION --- >>>
+
 /**
  * Handle job completion: Fetch user projection, fetch N=100 similar sequences,
  * ensure reference cache is loaded, find coordinates for similar sequences,
@@ -404,9 +470,10 @@ async function handleJobCompletion(jobId, jobData) {
     console.log(`Prepared Top 10 data with coords: ${userContextData10WithCoords.length} points`);
 
     // --- Step 8: Initialize or Update Visualizations ---
-    showLoadingIndicator("Initializing/Updating visualizations..."); 
+    showLoadingIndicator("Initializing/Updating visualizations...");
 
     // 8a: Contextual UMAP (`#scatter-container`)
+    let scatterComponentInitialized = false; // Flag to track if newly initialized
     if (!state.scatterComponent) {
       console.log("Initializing main UMAP (scatterComponent)...");
       const scatterContainerId = 'scatter-container';
@@ -418,9 +485,21 @@ async function handleJobCompletion(jobId, jobData) {
         initialUserSequence: userSequence,
         colorScheme: { user: '#FF5722', top10: '#E91E63', other: '#9E9E9E' }
       });
+      scatterComponentInitialized = true; // Mark as newly initialized
     } else {
       console.log("Updating main UMAP (scatterComponent)...");
       state.scatterComponent.updateScatterPlot(contextualUmapData, userSequence);
+    }
+     // --- Setup Zoom Controls for UMAP ---
+    if (state.scatterComponent) {
+        setupZoomControls(state.scatterComponent, {
+            zoomIn: 'zoom-in-scatter',
+            zoomOut: 'zoom-out-scatter',
+            reset: 'reset-scatter'
+        });
+        // Hide/Show controls container based on data presence
+        const scatterControls = document.getElementById('scatter-container')?.querySelector('.zoom-controls');
+        if (scatterControls) scatterControls.style.display = (contextualUmapData.length > 0 || userSequence) ? 'flex' : 'none';
     }
 
     // 8b: Reference Map (`#map-container`)
@@ -476,8 +555,16 @@ async function handleJobCompletion(jobId, jobData) {
     updateDetailsWithSimilarSequences(userSequence, userContextData10WithCoords); // This updates innerHTML, no init needed
 
     // --- Crucially, setup cross-highlighting AFTER components are initialized ---
-    setupCrossHighlighting();
-    setupPointHoverEffects(); // Needs to run after details panel is populated
+    // Only setup if newly initialized or if significant changes occurred?
+    // For simplicity, let's assume setup is safe to call multiple times if needed
+    // OR better, check the flag:
+    if (scatterComponentInitialized /* || mapComponentInitialized || geoMapComponentInitialized */) {
+         setupCrossHighlighting();
+         setupPointHoverEffects(); // Needs to run after details panel is populated
+    } else {
+         // If only updating, hover effects might still need refreshing if details panel changed
+         setupPointHoverEffects(); // Refresh hover effects based on new details panel items
+    }
 
     // --- Step 9: Notifications ---
     showNotification(`Analysis complete. Displaying your sequence and ${contextualUmapData.length} similar sequences found in the reference dataset.`, "success");
@@ -1262,11 +1349,10 @@ resetButton?.addEventListener('click', () => {
   state.jobTracker?.destroy();
   state.jobTracker = null;
 
-
-  // Optionally remove visualization containers content if destroy methods don't exist
-   document.getElementById('scatter-container').innerHTML = '<div class="empty-state-message flex flex-col items-center justify-center h-full"><p class="text-center text-gray-500 mb-4">Upload a sequence to view its relationship...</p></div>';
-   document.getElementById('map-container').innerHTML = '<div class="empty-state-message flex flex-col items-center justify-center h-full" style="min-height: 550px;"><p class="text-center text-gray-500 mb-4">Upload a sequence to view the geographic distribution...</p></div>';
-   document.getElementById('user-geo-container').innerHTML = '<div class="empty-state-message flex flex-col items-center justify-center h-full"><p class="text-center text-gray-500 mb-4">Upload a sequence to view the specific locations...</p></div>';
+  // --- Hide zoom controls on reset ---
+  document.querySelectorAll('.zoom-controls').forEach(controls => {
+      controls.style.display = 'none';
+  });
 
   // Re-initialize state pointers (if needed, though resetting data might suffice)
   state.scatterComponent = null;

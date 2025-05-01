@@ -154,14 +154,45 @@ export function createUmapScatterPlot(containerId, data = [], options = {}) {
   // --- ADD Points Group --- (Good practice to group points)
   const pointsGroup = g.append('g').attr('class', 'points-group')
 
-  // --- Legend Group ---
-  const legendGroup = g
+  // --- Legend Group (Append to SVG for static positioning) ---
+  const legendGroup = svg // <<< Append directly to svg, NOT g
     .append('g')
     .attr('class', 'umap-legend')
-    .attr('transform', `translate(${innerWidth - 120}, 10)`) // Initial position (adjust as needed)
+    // Position relative to SVG top-left, accounting for margin
+    .attr(
+      'transform',
+      `translate(${config.margin.left + 10}, ${config.margin.top + 10})`
+    )
 
   // --- ADD Label Group ---
   const labelsGroup = g.append('g').attr('class', 'labels-group')
+
+  // <<<--- START NEW ZOOM CODE --->>>
+  // Define the zoom behavior
+  const zoomBehavior = d3
+    .zoom()
+    .scaleExtent([0.5, 10]) // Example: Allow zooming from 0.5x to 10x
+    .filter((event) => !(event.type === 'wheel')) // Disable wheel zoom, keep drag pan
+    .on('zoom', zoomed) // Attach the zoom event handler
+
+  // Define the zoom event handler function
+  function zoomed(event) {
+    // Apply the transform to the main content group 'g'
+    // This will move/scale the points, axes, labels, connections etc. within 'g'
+    g.attr('transform', event.transform)
+  }
+
+  // Apply the zoom behavior to the SVG element
+  // Ensure the SVG captures pointer events for dragging
+  svg
+    .call(zoomBehavior)
+    .style('pointer-events', 'all') // Make sure SVG intercepts drag events
+    .style('cursor', 'grab') // Optional: Change cursor on hover
+
+  // Optional: Update cursor during drag for better UX
+  zoomBehavior.on('start.cursor', () => svg.style('cursor', 'grabbing'))
+  zoomBehavior.on('end.cursor', () => svg.style('cursor', 'grab'))
+  // <<<--- END NEW ZOOM CODE --->>>
 
   /**
    * Update the scatter plot with new data and optionally a user sequence.
@@ -610,75 +641,41 @@ export function createUmapScatterPlot(containerId, data = [], options = {}) {
     console.log(`Added ${sequencesToPlot.length} connection lines.`)
   }
 
-  // --- ADD Legend Function ---
   /**
-   * Creates or updates the legend within the SVG.
+   * Adds or updates the legend within the legendGroup.
    */
   function addOrUpdateLegend() {
-    legendGroup.selectAll('*').remove() // Clear previous legend items
+    // Ensure legend items are cleared and redrawn within the existing legendGroup
+    legendGroup.selectAll('*').remove() // Clear previous items
 
-    const legendItemsData = [
-      {
-        label: 'Your Sequence',
-        color: config.colors.user,
-        type: 'circle',
-        radius: config.userPointRadius / 2,
-      }, // Adjust radius for legend symbol
-      {
-        label: 'Top 10 Similar',
-        color: config.colors.top10,
-        type: 'circle',
-        radius: config.pointRadius / 1.5,
-      },
-      {
-        label: 'Similar (11-100)',
-        color: config.colors.other,
-        type: 'circle',
-        radius: config.pointRadius / 1.5,
-      },
-      { label: 'Connection', color: '#999', type: 'line' }, // Match connection color
+    const legendItems = [
+      { color: config.colors.user, label: 'User Sequence' },
+      { color: config.colors.top10, label: 'Top 10 Similar' },
+      { color: config.colors.other, label: 'Similar (11-100)' },
+      // { color: 'steelblue', label: 'Similarity Line' } // Example if added later
     ]
 
-    const legendItem = legendGroup
-      .selectAll('.legend-item')
-      .data(legendItemsData)
-      .enter()
-      .append('g')
-      .attr('class', 'legend-item')
-      .attr('transform', (d, i) => `translate(0, ${i * 20})`) // Vertical spacing
+    legendItems.forEach((item, index) => {
+      const itemGroup = legendGroup
+        .append('g')
+        .attr('transform', `translate(0, ${index * 20})`) // Vertical layout
 
-    // Draw Symbols (Circles or Lines)
-    legendItem.each(function (d) {
-      const itemGroup = d3.select(this)
-      if (d.type === 'circle') {
-        itemGroup
-          .append('circle')
-          .attr('cx', 10) // Position symbol horizontally
-          .attr('cy', 5) // Position symbol vertically
-          .attr('r', d.radius || 5)
-          .style('fill', d.color)
-          .style('fill-opacity', d.label.includes('11-100') ? 0.5 : 0.9) // Match point opacity
-      } else if (d.type === 'line') {
-        itemGroup
-          .append('line')
-          .attr('x1', 0)
-          .attr('y1', 5)
-          .attr('x2', 20) // Line length
-          .attr('y2', 5)
-          .style('stroke', d.color)
-          .style('stroke-width', 1.5)
-          .style('stroke-opacity', 0.6)
-      }
+      itemGroup
+        .append('circle')
+        .attr('cx', 0)
+        .attr('cy', -4) // Adjust vertical alignment
+        .attr('r', 5)
+        .style('fill', item.color)
+
+      itemGroup
+        .append('text')
+        .attr('x', 12) // Space between circle and text
+        .attr('y', 0) // Adjust vertical alignment
+        .text(item.label)
+        .style('font-size', '11px')
+        .style('alignment-baseline', 'middle')
     })
-
-    // Add Text Labels
-    legendItem
-      .append('text')
-      .attr('x', 28) // Position text next to symbol
-      .attr('y', 9) // Align text vertically
-      .style('font-size', '10px')
-      .style('fill', '#333')
-      .text((d) => d.label)
+    console.log('UMAP Legend updated/created in legendGroup.')
   }
 
   /**
@@ -733,7 +730,10 @@ export function createUmapScatterPlot(containerId, data = [], options = {}) {
     // or storing the necessary data to recalculate line endpoints.
 
     // --- Update Legend Position ---
-    legendGroup.attr('transform', `translate(${innerWidth - 120}, 10)`)
+    legendGroup.attr(
+      'transform',
+      `translate(${config.margin.left + 10}, ${config.margin.top + 10})`
+    )
   }
 
   // Add resize listener
@@ -849,8 +849,8 @@ export function createUmapScatterPlot(containerId, data = [], options = {}) {
     setCrossHighlightFunction,
     addSimilarityConnections, // Expose the connections function if needed externally
     container, // Expose container DOM element
-    svg: svg.node(), // Expose SVG DOM element
-    g: g.node(), // Expose main group DOM element
+    svg: svg, // <<< FIX: Return the D3 selection 'svg', not svg.node() >>>
+    // g: g.node(), // Expose main group DOM element (optional, keep if needed elsewhere)
     xScale, // Expose scales if needed externally
     yScale,
     handleResize, // Allow external trigger if needed
@@ -858,8 +858,11 @@ export function createUmapScatterPlot(containerId, data = [], options = {}) {
     destroy: () => {
       window.removeEventListener('resize', handleResize)
       tooltip.remove()
+      svg.on('.zoom', null) // Remove zoom listeners
       svg.remove() // Remove the SVG element itself
       console.log(`Scatter plot ${containerId} destroyed.`)
     },
+    zoomBehavior: zoomBehavior,
+    addOrUpdateLegend, // Ensure this is returned if called externally
   }
 }
