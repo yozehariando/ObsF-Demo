@@ -202,17 +202,43 @@ export async function createUserGeoMap(containerId, options = {}) {
   // <<<--- END NEW ZOOM CODE --->>>
 
   /**
-   * Update the map with user sequence and top similar sequences.
-   * @param {Object|null} userSequence - The user's sequence data (must include metadata.lat_lon).
-   * @param {Array} similarSequences - Array of top N similar sequences (must include metadata.lat_lon).
+   * Safely parses the year from sequence metadata.
+   * @param {Object} metadata - The metadata object for a sequence.
+   * @returns {number|null} The parsed year as an integer, or null if invalid.
    */
-  function updateMap(userSequence, similarSequences = []) {
+  function getSequenceYear(metadata) {
+    if (!metadata) return null
+    const yearSource = metadata.first_year ?? metadata.years?.[0] // Prefer first_year, fallback to years array
+    if (yearSource === null || yearSource === undefined) return null
+    const year = parseInt(yearSource)
+    return !isNaN(year) ? year : null
+  }
+
+  /**
+   * Update the map with user sequence and similar sequences, applying filters and time highlighting.
+   * @param {Object|null} userSequence - The user's sequence data.
+   * @param {Array} allSimilarSequences - The *full* array of similar sequences.
+   * @param {number|null} yearFilter - The year to highlight sequences for. If null, no time highlighting is applied.
+   * @param {number} similarityThreshold - The minimum similarity (0-1 range) required to display a point prominently.
+   */
+  function updateMap(
+    userSequence,
+    allSimilarSequences = [],
+    yearFilter = null,
+    similarityThreshold = 0
+  ) {
     console.log(
-      `🌍 User Geo Map: Updating with ${similarSequences.length} similar sequences.`
+      `🌍 User Geo Map: Updating. Year Highlight: ${
+        yearFilter ?? 'None'
+      }, Min Similarity: ${similarityThreshold.toFixed(2)}`
     )
+
+    // We are plotting ALL sequences passed in, but styling based on filters.
+    const sequencesToPlot = Array.isArray(allSimilarSequences)
+      ? allSimilarSequences
+      : []
     console.log(
-      `🌍 Geo Map - Raw similarSequences data sample (first 2):`,
-      similarSequences.slice(0, 2)
+      `🌍 User Geo Map: Plotting ${sequencesToPlot.length} sequences.` // Log total sequences being plotted
     )
 
     // Clear previous points and connections
@@ -221,48 +247,44 @@ export async function createUserGeoMap(containerId, options = {}) {
 
     let userCoords = null
     let userProjected = null
-    // --- ALWAYS USE PLACEHOLDER ---
     let userCoordIsPlaceholder = true
 
-    // --- Process User Sequence Data (but don't draw yet) ---
+    // --- Process User Sequence Data ---
     if (userSequence) {
-      // Check if userSequence object exists
       console.log(
         `🌍 Geo Map - Processing User Sequence: ID=${userSequence.id}`
       )
-      // --- ALWAYS ASSIGN PLACEHOLDER COORDS ---
-      userCoords = [0, -30] // Latitude 0, Longitude -30 (Mid-Atlantic)
+      // Keep using placeholder for user sequence
+      userCoords = [0, -30] // Mid-Atlantic
       console.warn(
-        '🌍 Geo Map: Assigning static placeholder coordinates for user sequence.'
+        '🌍 Geo Map: Using static placeholder coordinates for user sequence.'
       )
-
-      // Project the placeholder coords
       userProjected = projection([userCoords[1], userCoords[0]]) // [lon, lat]
-      console.log(
-        `🌍 Geo Map - User Projected Coords: [${userProjected?.[0]}, ${userProjected?.[1]}] (Placeholder: ${userCoordIsPlaceholder})`
-      )
       if (
         !userProjected ||
         isNaN(userProjected[0]) ||
         isNaN(userProjected[1])
       ) {
         console.error(
-          '🌍 Geo Map: Could not project user *placeholder* coordinates!'
-        ) // More critical error now
-        userProjected = null // Invalidate if projection failed
+          '🌍 Geo Map: Could not project user placeholder coordinates!'
+        )
+        userProjected = null
       }
     } else {
       console.warn('🌍 Geo Map: No user sequence provided.')
-      userProjected = null // Ensure userProjected is null if no userSequence
+      userProjected = null
     }
 
     // --- JITTERING SETUP ---
-    const occupiedCoordinates = {} // Stores { "cx,cy": count }
-    const jitterRadiusBase = 2 // Base radius for jitter offset in pixels
-    const goldenAngle = Math.PI * (3 - Math.sqrt(5)) // Angle for spiral distribution
+    const occupiedCoordinates = {}
+    const jitterRadiusBase = 2
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5))
 
-    // --- Plot Similar Sequence Points and Connections FIRST ---
-    similarSequences.forEach((seq, index) => {
+    // Determine Top 10 IDs (assuming input is sorted by similarity)
+    const top10Ids = new Set(sequencesToPlot.slice(0, 10).map((s) => s.id))
+
+    // --- Plot Similar Sequence Points ---
+    sequencesToPlot.forEach((seq, index) => {
       console.log(
         `🌍 Geo Map - Processing Similar Seq #${index}: ID=${seq?.id}, LatLon=${seq?.metadata?.lat_lon}`
       )
@@ -297,60 +319,107 @@ export async function createUserGeoMap(containerId, options = {}) {
         return
       }
 
-      // --- JITTERING LOGIC ---
+      // --- Jittering Logic ---
       let finalX = similarProjected[0]
       let finalY = similarProjected[1]
-      const coordKey = `${finalX.toFixed(3)},${finalY.toFixed(3)}` // Use rounded key
+      const coordKey = `${finalX.toFixed(3)},${finalY.toFixed(3)}`
 
       if (occupiedCoordinates[coordKey]) {
         occupiedCoordinates[coordKey]++
         const count = occupiedCoordinates[coordKey]
         const angle = count * goldenAngle
-        const radius = jitterRadiusBase * Math.sqrt(count) // Radius grows with square root of count
-        const offsetX = radius * Math.cos(angle)
-        const offsetY = radius * Math.sin(angle)
-        finalX += offsetX
-        finalY += offsetY
+        const radius = jitterRadiusBase * Math.sqrt(count)
+        finalX += radius * Math.cos(angle)
+        finalY += radius * Math.sin(angle)
         console.log(
           `🌍 Geo Map - Jittering Seq #${index} (ID: ${
             seq.id
-          }). Count at location: ${count}, Offset: [${offsetX.toFixed(
-            2
-          )}, ${offsetY.toFixed(2)}]`
+          }). Count at location: ${count}, Offset: [${(
+            radius * Math.cos(angle)
+          ).toFixed(2)}, ${(radius * Math.sin(angle)).toFixed(2)}]`
         )
       } else {
-        occupiedCoordinates[coordKey] = 1 // Initialize count for this location
+        occupiedCoordinates[coordKey] = 1
       }
-      // --- END JITTERING LOGIC ---
+
+      // --- Determine Styles based on Similarity and Time ---
+      const meetsSimilarity = (seq.similarity ?? 0) >= similarityThreshold
+      const sequenceYear = getSequenceYear(seq.metadata)
+      // Highlight only if yearFilter is active AND sequence year matches
+      const isTimeHighlighted =
+        yearFilter !== null && sequenceYear === yearFilter
+      const isTop10 = top10Ids.has(seq.id)
+
+      let pointFill, pointStroke, pointStrokeWidth, pointOpacity, pointRadius
+
+      if (!meetsSimilarity) {
+        // Style for below similarity threshold (always very faded)
+        pointFill = '#e0e0e0' // Light grey
+        pointStroke = '#bdbdbd'
+        pointStrokeWidth = 0.2
+        pointOpacity = 0.1
+        pointRadius = 3
+      } else {
+        // Base style for sequences meeting similarity threshold
+        pointFill = config.similarityColorScale(seq.similarity || 0) // Color by similarity
+        pointStroke = isTop10 ? config.userColor : '#333' // Top 10 border
+        pointStrokeWidth = isTop10 ? 1.5 : 0.5
+        pointRadius = isTop10 ? 5 : 4
+        pointOpacity = 0.7
+
+        // Apply time-based adjustments *if* a year filter is active
+        if (yearFilter !== null) {
+          if (isTimeHighlighted) {
+            // Time-highlighted style
+            pointOpacity = 1.0
+            pointRadius = isTop10 ? 6.5 : 5.5 // Enlarge
+            pointStrokeWidth = isTop10 ? 2.0 : 1.5 // Thicker border
+          } else {
+            // Time-faded style (meets similarity, but wrong year)
+            pointOpacity = 0.25 // Moderately faded
+            pointRadius = isTop10 ? 4.5 : 3.5 // Slightly smaller
+            // Optional: Desaturate fill slightly? For now, just use opacity.
+            // pointFill = d3.color(pointFill).brighter(-0.5).formatHex();
+          }
+        }
+        // If yearFilter is null, the base style from above is used (no time fading/highlighting)
+      }
+      // --- End Style Determination ---
 
       console.log(
-        `🌍 Geo Map - Appending circle for Seq #${index} (ID: ${seq.id}) at [${finalX}, ${finalY}]` // Use finalX/Y
+        `🌍 Geo Map - Appending circle for Seq #${index} (ID: ${seq.id}) at [${finalX}, ${finalY}]`
       )
-      // Append similar point circle
+      // Append similar point circle with dynamic styles
       pointsGroup
         .append('circle')
-        .attr('class', 'map-point similar-point')
-        .attr('cx', finalX) // Use finalX
-        .attr('cy', finalY) // Use finalY
-        .attr('r', 4)
-        .attr('fill', config.similarityColorScale(seq.similarity || 0))
-        .attr('stroke', '#333')
-        .attr('stroke-width', 0.5)
-        .attr('opacity', 0.7)
+        .attr(
+          'class',
+          `map-point similar-point ${isTop10 ? 'top-10' : ''} ${
+            isTimeHighlighted ? 'time-highlight' : 'time-faded'
+          }`
+        )
+        .attr('cx', finalX)
+        .attr('cy', finalY)
+        .attr('r', pointRadius)
+        .attr('fill', pointFill)
+        .attr('stroke', pointStroke)
+        .attr('stroke-width', pointStrokeWidth)
+        .attr('opacity', pointOpacity)
         .attr('data-id', seq.id)
         .style('cursor', 'pointer')
         .on('mouseover', function (event) {
-          d3.select(this)
-            .transition()
-            .duration(100)
-            .attr('r', 6)
-            .style('opacity', 1.0)
           tooltip
-            .html(getSimilarTooltipContent(seq, similarCoords)) // Pass original coords to tooltip
+            .html(getSimilarTooltipContent(seq, similarCoords))
             .style('visibility', 'visible')
             .transition()
             .duration(100)
             .style('opacity', 1)
+          // Optional: Slightly enhance hover even if faded/highlighted
+          d3.select(this)
+            .raise()
+            .transition()
+            .duration(50)
+            .style('stroke-width', pointStrokeWidth + 1)
         })
         .on('mousemove', function (event) {
           tooltip
@@ -358,47 +427,64 @@ export async function createUserGeoMap(containerId, options = {}) {
             .style('left', event.pageX + 15 + 'px')
         })
         .on('mouseout', function () {
-          d3.select(this).attr('r', 4).style('opacity', 0.7)
           tooltip.style('opacity', 0).style('visibility', 'hidden')
+          // Revert hover enhancement
+          d3.select(this)
+            .transition()
+            .duration(50)
+            .style('stroke-width', pointStrokeWidth)
         })
 
-      // --- Draw Connection Line (if user point was successfully projected) ---
+      // --- Draw Connection Line ---
       if (userProjected) {
+        // Fade connection if the *target* point is faded (either by similarity or time)
+        let connectionOpacity = 0.4 // Default
+        if (!meetsSimilarity) {
+          connectionOpacity = 0.05 // Very faint if below similarity
+        } else if (yearFilter !== null && !isTimeHighlighted) {
+          connectionOpacity = 0.1 // Faint if time-faded
+        }
+
         connectionsGroup
           .append('line')
           .attr('class', 'map-connection')
-          .attr('x1', userProjected[0]) // Originates from user point
+          .attr('x1', userProjected[0])
           .attr('y1', userProjected[1])
-          .attr('x2', finalX) // Ends at (potentially jittered) similar point
+          .attr('x2', finalX)
           .attr('y2', finalY)
           .attr('stroke', config.connectionColor)
           .attr('stroke-width', 0.5)
-          .attr('stroke-opacity', 0.4)
+          .attr('stroke-opacity', connectionOpacity)
           .attr('data-target', seq.id)
       }
-    }) // End of similarSequences.forEach
+    })
 
-    // --- Plot User Sequence Point LAST (if valid) ---
+    // --- Plot User Sequence Point LAST ---
     if (userProjected) {
-      // Check if user placeholder point was successfully projected
+      // Apply similar time-based styling logic to user point?
+      // For now, user point always prominent.
+      const userPointOpacity = 1.0 // Keep user point fully visible
+      const userPointRadius = 6
+      const userPointStrokeWidth = 1.5
+
       pointsGroup
         .append('circle')
         .attr('class', 'map-point user-point')
-        .attr('cx', userProjected[0]) // Use the placeholder projected coords
+        .attr('cx', userProjected[0])
         .attr('cy', userProjected[1])
-        .attr('r', 6)
+        .attr('r', userPointRadius)
         .attr('fill', config.userColor)
         .attr('stroke', '#fff')
-        .attr('stroke-width', 1.5)
-        .attr('opacity', 0.9)
-        .attr('data-id', userSequence?.id || 'user') // Use optional chaining
+        .attr('stroke-width', userPointStrokeWidth)
+        .attr('opacity', userPointOpacity)
+        .attr('data-id', userSequence?.id || 'user')
         .style('cursor', 'help')
         .on('mouseover', function (event) {
           tooltip
             .html(
               `<h4>Your Sequence</h4>
-                 <p>ID: ${userSequence?.id || 'N/A'}</p> 
-                 <p style="color: #777;">(Placeholder Location)</p>` // Always show placeholder text
+                     <p>ID: ${userSequence?.id || 'N/A'}</p> 
+                     <p style="color: #777;">(Placeholder Location)</p>`
             )
             .style('visibility', 'visible')
             .transition()
@@ -452,7 +538,7 @@ export async function createUserGeoMap(containerId, options = {}) {
         <p style="margin: 2px 0;"><strong>Year:</strong> ${year}</p>
         <p style="margin: 2px 0;"><strong>Host:</strong> ${host}</p>
         <p style="margin: 2px 0;"><strong>Isolation Source:</strong> ${isolationSource}</p>
-        <p style="margin: 2px 0;"><strong>Coords:</strong> ${coordsString}</p> <!-- Display original coords -->
+        <p style="margin: 2px 0;"><strong>Coords:</strong> ${coordsString}</p>
       `
   }
 
@@ -553,10 +639,11 @@ export async function createUserGeoMap(containerId, options = {}) {
 
   // Return public API
   return {
-    updateMap,
+    svg: svg,
+    projection: projection,
+    updateMap: updateMap,
     highlightSequence,
-    svg: svg, // Return D3 selection
-    zoomBehavior: zoomBehavior, // Expose zoom behavior
+    zoomBehavior: zoomBehavior,
     destroy: () => {
       window.removeEventListener('resize', handleResize)
       tooltip.remove()
