@@ -299,6 +299,7 @@ const state = {
   isPlaying: false,         // Animation state
   animationTimer: null,     // Holds the interval/timer ID
   allSimilarSequencesData: [], // Store the full dataset for filtering
+  geoMapSequenceSubset: [], // Store the specific subset for the Geo Map animation
 };
 
 // <<<--- START NEW FUNCTION DEFINITION --- >>>
@@ -431,7 +432,7 @@ async function handleJobCompletion(jobId, jobData) {
     const top100SimilarRaw = similarSequencesResponse100.result;
     console.log(`Received ${top100SimilarRaw.length} similar sequences from API (including coords).`);
 
-    // --- Store full dataset for time-lapse ---
+    // --- Store full dataset for time-lapse --- // NOTE: Maybe rename allSimilarSequencesData to top100SimilarRaw?
     state.allSimilarSequencesData = top100SimilarRaw; // Store the raw data
 
     // --- Step 4: Prepare Data Subsets (Simplified) ---
@@ -439,6 +440,10 @@ async function handleJobCompletion(jobId, jobData) {
     const contextualUmapData = [];
     const referenceMapData100 = []; // Still needed for main map display
     const userContextData10WithCoords = []; // Still needed for details panel
+
+    // *** CREATE AND STORE THE GEO MAP SUBSET ***
+    const geoMapLimit = 10; // Define the limit for the Geo Map
+    state.geoMapSequenceSubset = []; // Initialize/clear the subset
 
     let missingCoordsCount = 0;
 
@@ -465,6 +470,10 @@ async function handleJobCompletion(jobId, jobData) {
         if (combinedData.isTop10) {
           userContextData10WithCoords.push(combinedData);
         }
+        // Add to the Geo Map subset if within the limit
+        if (index < geoMapLimit) {
+           state.geoMapSequenceSubset.push(combinedData);
+        }
       } else {
          missingCoordsCount++;
          console.warn(`Similar sequence ${rawSeq.id} (index ${index}) is missing umap_coords.`);
@@ -474,6 +483,7 @@ async function handleJobCompletion(jobId, jobData) {
     console.log(`Prepared UMAP data: ${contextualUmapData.length} points (out of ${top100SimilarRaw.length} raw)`);
     console.log(`Prepared Reference Map data: ${referenceMapData100.length} points`);
     console.log(`Prepared Top 10 data with coords: ${userContextData10WithCoords.length} points`);
+    console.log(`Stored Geo Map subset: ${state.geoMapSequenceSubset.length} points (Limit: ${geoMapLimit})`); // Log subset size
     if (missingCoordsCount > 0) {
         showWarningMessage(`Note: ${missingCoordsCount} similar sequences were missing coordinates in the API response.`);
     }
@@ -558,22 +568,20 @@ async function handleJobCompletion(jobId, jobData) {
 
     // 5c: Geo Map (`#user-geo-container`)
     let geoMapComponentInitialized = false;
-    const top10ForGeoMap = state.allSimilarSequencesData.slice(0, 25); // Use full data for filtering later
+    // const top10ForGeoMap = state.allSimilarSequencesData.slice(0, 25); // REMOVE THIS LINE
 
     if (!state.userGeoMap) { // FIRST TIME initialization block
         console.log('Attempting to create User Geo Map...');
         console.log("⏳ PRE-AWAIT: About to call createUserGeoMap.");
         try {
-            // *** USE AWAIT HERE ***
             state.userGeoMap = await createUserGeoMap(
-              'user-geo-container', // Correct ID without '#'
-              top10ForGeoMap,       // Pass initial data (full set for filtering)
-              userSequence,         // Pass user sequence
+              'user-geo-container',
+              state.geoMapSequenceSubset, // *** PASS THE SUBSET HERE ***
+              userSequence,
               { /* options */ },
-              // Pass handlers directly
               (event, data) => handlePointHover(data, 'user-geo-map'),
-              handlePointLeave,   // Pass leave handler reference
-              state.timeMax       // Pass initial year filter
+              handlePointLeave,
+              state.timeMax
             );
             console.log("✅ POST-AWAIT: createUserGeoMap call finished.");
             console.log("🕵️‍♂️ Value after awaiting createUserGeoMap:", state.userGeoMap);
@@ -1394,25 +1402,23 @@ function updateTimelapseUI() {
  * This function now acts as the central point to call the component's update method.
  */
 function filterAndUpdateMap() {
-    // *** ADD LOG HERE ***
     console.log(`➡️ filterAndUpdateMap called. Time: ${state.currentTime}, Similarity: ${state.similarityThreshold}%`);
     // Target the userGeoMap component
-    if (state.userGeoMap && typeof state.userGeoMap.updateMap === 'function' && state.allSimilarSequencesData) {
-        // *** ADD LOG HERE ***
-        console.log(`   📞 Calling state.userGeoMap.updateMap...`);
-        // Pass the full dataset, user sequence, current year filter, and similarity threshold
+    // *** PASS THE SUBSET INSTEAD OF FULL DATA ***
+    if (state.userGeoMap && typeof state.userGeoMap.updateMap === 'function' && state.geoMapSequenceSubset) {
+        console.log(`   📞 Calling state.userGeoMap.updateMap with ${state.geoMapSequenceSubset.length} sequences...`);
         state.userGeoMap.updateMap(
-            state.userSequence, // Argument 1: User sequence object
-            state.allSimilarSequencesData, // Argument 2: Full dataset array
-            state.currentTime, // Argument 3: Current year for highlighting
+            state.userSequence,             // Argument 1: User sequence object
+            state.geoMapSequenceSubset,     // Argument 2: *** THE SUBSET ***
+            state.currentTime,              // Argument 3: Current year for highlighting
             state.similarityThreshold / 100 // Argument 4: Similarity threshold (0-1 range)
         );
         updateTimelapseUI(); // Ensure UI reflects current state
     } else {
-         console.warn("Cannot update Geo map: component, updateMap function, or data missing.", {
+         console.warn("Cannot update Geo map: component, updateMap function, or subset data missing.", {
             mapExists: !!state.userGeoMap,
             hasUpdateMap: typeof state.userGeoMap?.updateMap,
-            hasData: !!state.allSimilarSequencesData
+            hasSubsetData: !!state.geoMapSequenceSubset
          });
     }
 }
@@ -1636,36 +1642,34 @@ function getAnimationSpeed() {
 
 /** Shared function to advance the time step */
 function stepTime() {
-    console.log("⏰ Stepping time..."); // Log step start
+    console.log("⏰ Stepping time...");
     if (!state.isPlaying || state.timeMin === null || state.timeMax === null) {
         console.log("   -> Animation not playing or time range invalid, stopping step.");
-        stopAnimation(); // Ensure stopped if state is inconsistent
+        stopAnimation();
         return;
     }
 
     let currentYear = state.currentTime;
-    if (currentYear === null) currentYear = state.timeMin -1; // Handle starting case
+    if (currentYear === null) currentYear = state.timeMin - 1;
 
     if (currentYear < state.timeMax) {
         currentYear++;
+        console.log(`   -> New current time: ${state.currentTime}`);
+        state.currentTime = currentYear;
+
+        const timeSlider = document.getElementById('time-slider-geo');
+        if (timeSlider) timeSlider.value = state.currentTime;
+        filterAndUpdateMap();
+
+        if (state.isPlaying) { // Check again before scheduling next step
+            const speed = getAnimationSpeed();
+            console.log(`   -> Scheduling next step in ${speed}ms`);
+            state.animationTimer = setTimeout(stepTime, speed);
+        }
     } else {
-        currentYear = state.timeMin; // Loop back to start
-        console.log("   -> Reached end, looping back to start.");
-    }
-    state.currentTime = currentYear;
-    console.log(`   -> New current time: ${state.currentTime}`);
-
-    // Update the slider visually
-    const timeSlider = document.getElementById('time-slider-geo');
-    if (timeSlider) timeSlider.value = state.currentTime;
-
-    filterAndUpdateMap(); // Update map with new time
-
-    // Check if still playing before scheduling next step
-    if (state.isPlaying) {
-        const speed = getAnimationSpeed();
-        console.log(`   -> Scheduling next step in ${speed}ms`);
-        state.animationTimer = setTimeout(stepTime, speed);
+        // *** STOP AT END ***
+        console.log("   -> Reached end year. Stopping animation.");
+        stopAnimation(); // Call stopAnimation instead of looping
     }
 }
 
