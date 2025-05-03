@@ -56,6 +56,13 @@ toc: false
             <div class="empty-state-message flex flex-col items-center justify-center h-full" style="min-height: 550px;">
               <p class="text-center text-gray-500 mb-4">Upload a sequence to view the geographic distribution of similar sequences.</p>
             </div>
+            <!-- <<< START MAP ZOOM CONTROLS >>> -->
+            <div class="zoom-controls" style="position: absolute; top: 10px; right: 10px; display: none; flex-direction: column; gap: 5px; z-index: 10;">
+              <button id="zoom-in-map" class="btn btn-sm btn-outline-secondary" title="Zoom In">+</button>
+              <button id="zoom-out-map" class="btn btn-sm btn-outline-secondary" title="Zoom Out">-</button>
+              <button id="reset-map" class="btn btn-sm btn-outline-secondary" title="Reset Zoom">Reset</button>
+            </div>
+            <!-- <<< END MAP ZOOM CONTROLS >>> -->
           </div>
         </div>
         <!-- Geo Map Card -->
@@ -66,6 +73,13 @@ toc: false
             <div class="empty-state-message flex flex-col items-center justify-center h-full">
               <p class="text-center text-gray-500 mb-4">Upload a sequence to view the specific locations of the top 10 most similar sequences.</p>
             </div>
+            <!-- <<< START GEO MAP ZOOM CONTROLS >>> -->
+            <div class="zoom-controls" style="position: absolute; top: 10px; right: 10px; display: none; flex-direction: column; gap: 5px; z-index: 10;">
+              <button id="zoom-in-geo" class="btn btn-sm btn-outline-secondary" title="Zoom In">+</button>
+              <button id="zoom-out-geo" class="btn btn-sm btn-outline-secondary" title="Zoom Out">-</button>
+              <button id="reset-geo" class="btn btn-sm btn-outline-secondary" title="Reset Zoom">Reset</button>
+            </div>
+            <!-- <<< END GEO MAP ZOOM CONTROLS >>> -->
           </div>
         </div>
     </div>
@@ -432,7 +446,7 @@ async function handleJobCompletion(jobId, jobData) {
     // --- Step 5: Initialize or Update Visualizations ---
     showLoadingIndicator("Initializing/Updating visualizations...");
 
-    // 5a: Contextual UMAP (`#scatter-container`) - Logic remains the same, just uses the new contextualUmapData
+    // 5a: Contextual UMAP (`#scatter-container`)
     let scatterComponentInitialized = false;
     if (!state.scatterComponent) {
       console.log("Initializing main UMAP (scatterComponent)...");
@@ -461,10 +475,9 @@ async function handleJobCompletion(jobId, jobData) {
         if (scatterControls) scatterControls.style.display = (contextualUmapData.length > 0 || userSequence) ? 'flex' : 'none';
     }
 
-    // 5b: Reference Map (`#map-container`) - Uses referenceMapData100
-    // (Initialization/update logic remains the same)
+    // 5b: Reference Map (`#map-container`)
+    let mapComponentInitialized = false; // Flag for map init
     if (!state.mapComponent) {
-      // ... initialize createApiMap with referenceMapData100 ...
        console.log("Initializing Reference Map (mapComponent)...");
        const mapContainerId = 'map-container';
        const mapContainer = document.getElementById(mapContainerId);
@@ -473,41 +486,64 @@ async function handleJobCompletion(jobId, jobData) {
        state.mapComponent = createApiMap(mapContainerId, referenceMapData100, { // Pass new data
            initialUserSequence: userSequence
        });
+       mapComponentInitialized = true; // Mark as initialized
     } else {
-      // ... update state.mapComponent.updateMap with referenceMapData100 ...
       console.log("Updating Reference Map (mapComponent)...");
       state.mapComponent.updateMap(referenceMapData100, userSequence); // Pass new data
     }
+    // --- Setup Zoom Controls for Map ---
+    if (state.mapComponent) {
+        setupZoomControls(state.mapComponent, {
+            zoomIn: 'zoom-in-map',   // Use new map IDs
+            zoomOut: 'zoom-out-map', // Use new map IDs
+            reset: 'reset-map'     // Use new map IDs
+        });
+        // Hide/Show Map controls container based on data presence
+        const mapControls = document.getElementById('map-container')?.querySelector('.zoom-controls');
+        if (mapControls) mapControls.style.display = (referenceMapData100.length > 0) ? 'flex' : 'none'; // Show if map has data
+    }
 
-    // 5c: Geo Map (`#user-geo-container`) - Still uses Top 10 Raw data for potentially different viz logic
-    // (Initialization/update logic remains the same)
-    const top10ForGeoMap = top100SimilarRaw.slice(0, 10); // Use raw slice for consistency if it expects that format
+    // 5c: Geo Map (`#user-geo-container`)
+    let geoMapComponentInitialized = false; // Flag for geo map init
+    const top10ForGeoMap = top100SimilarRaw.slice(0, 10);
     if (!state.userGeoMap) {
-        // ... initialize createUserGeoMap ...
         console.log("Initializing User Geo Map (userGeoMap) with Top 10 raw...");
         const geoContainerId = 'user-geo-container';
         const geoContainer = document.getElementById(geoContainerId);
         const emptyState = geoContainer?.querySelector('.empty-state-message');
         if (emptyState) emptyState.style.display = 'none';
         state.userGeoMap = await createUserGeoMap(geoContainerId, {});
+        geoMapComponentInitialized = true; // Mark as initialized
+        // Update map immediately after initialization if successful
         if (state.userGeoMap && typeof state.userGeoMap.updateMap === 'function') {
-            state.userGeoMap.updateMap(userSequence, top10ForGeoMap); // Pass Top 10 Raw
-        } // ... error handling ...
+            state.userGeoMap.updateMap(userSequence, top10ForGeoMap);
+        } // ... error handling for initialization failure ...
     } else {
-        // ... update state.userGeoMap.updateMap ...
         console.log("Updating User Geo Map (userGeoMap) with Top 10 raw...");
         if (typeof state.userGeoMap.updateMap === 'function') {
-            state.userGeoMap.updateMap(userSequence, top10ForGeoMap); // Pass Top 10 Raw
-        } // ... error handling ...
+            state.userGeoMap.updateMap(userSequence, top10ForGeoMap);
+        } // ... error handling for update failure ...
+    }
+    // --- Setup Zoom Controls for Geo Map ---
+    if (state.userGeoMap) {
+        setupZoomControls(state.userGeoMap, {
+            zoomIn: 'zoom-in-geo',   // Use new geo map IDs
+            zoomOut: 'zoom-out-geo', // Use new geo map IDs
+            reset: 'reset-geo'     // Use new geo map IDs
+        });
+        // Hide/Show Geo Map controls container based on data presence
+        const geoMapControls = document.getElementById('user-geo-container')?.querySelector('.zoom-controls');
+        // Show if there's a user sequence OR any top 10 sequences
+        const showGeoControls = !!userSequence || top10ForGeoMap.length > 0;
+        if (geoMapControls) geoMapControls.style.display = showGeoControls ? 'flex' : 'none';
     }
 
-
-    // 5d: Details Panel (`#details-panel`) - Uses userContextData10WithCoords
+    // 5d: Details Panel (`#details-panel`)
     console.log("Updating Details Panel...");
     updateDetailsWithSimilarSequences(userSequence, userContextData10WithCoords); // Use the prepared top 10 list
 
     // --- Setup Interactions ---
-    if (scatterComponentInitialized /* || other components initialized */) {
+    if (scatterComponentInitialized || mapComponentInitialized || geoMapComponentInitialized) {
          setupCrossHighlighting();
          setupPointHoverEffects();
     } else {
@@ -1150,7 +1186,7 @@ resetButton?.addEventListener('click', () => {
 
   // --- Hide zoom controls on reset ---
   document.querySelectorAll('.zoom-controls').forEach(controls => {
-      controls.style.display = 'none';
+      controls.style.display = 'none'; // Hide ALL zoom controls
   });
 
   // Re-initialize state pointers (if needed, though resetting data might suffice)

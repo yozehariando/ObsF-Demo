@@ -175,6 +175,32 @@ export async function createUserGeoMap(containerId, options = {}) {
     return null // Return null if parsing fails or coordinates are invalid
   }
 
+  // <<<--- START NEW ZOOM CODE --->>>
+  // Define the zoom behavior
+  const zoomBehavior = d3
+    .zoom()
+    .scaleExtent([1, 8]) // Map specific extent (min zoom 1x, max 8x)
+    .filter((event) => !(event.type === 'wheel')) // Disable wheel zoom, keep drag pan
+    .on('zoom', zoomed) // Attach the zoom event handler
+
+  // Define the zoom event handler function
+  function zoomed(event) {
+    // Apply the transform to the main content group 'g'
+    // This will move/scale the world paths, points, and connections
+    g.attr('transform', event.transform)
+  }
+
+  // Apply the zoom behavior to the SVG element
+  svg
+    .call(zoomBehavior)
+    .style('pointer-events', 'all') // Ensure SVG intercepts drag events
+    .style('cursor', 'grab') // Optional: Change cursor
+
+  // Optional: Update cursor during drag for better UX
+  zoomBehavior.on('start.cursor', () => svg.style('cursor', 'grabbing'))
+  zoomBehavior.on('end.cursor', () => svg.style('cursor', 'grab'))
+  // <<<--- END NEW ZOOM CODE --->>>
+
   /**
    * Update the map with user sequence and top similar sequences.
    * @param {Object|null} userSequence - The user's sequence data (must include metadata.lat_lon).
@@ -485,12 +511,13 @@ export async function createUserGeoMap(containerId, options = {}) {
       worldGroup.selectAll('.country').attr('d', path)
     }
 
-    // Update point and connection positions (requires re-querying data or storing it)
-    // For simplicity, we might just require updateMap to be called after resize,
-    // or store the data locally to recalculate positions here.
-    // Let's keep it simple: positions update on the next call to updateMap.
+    // --- ADD ZOOM RESET ON RESIZE ---
+    // Reset zoom to identity on resize to avoid strange scaling issues
+    svg.transition().duration(200).call(zoomBehavior.transform, d3.zoomIdentity)
+    // --- END ZOOM RESET ---
+
     console.log(
-      'User Geo Map resized. Positions will update on next data load (updateMap call).'
+      'User Geo Map resized. Positions will update on next data load (updateMap call). Zoom reset.'
     )
   }
 
@@ -528,9 +555,12 @@ export async function createUserGeoMap(containerId, options = {}) {
   return {
     updateMap,
     highlightSequence,
+    svg: svg, // Return D3 selection
+    zoomBehavior: zoomBehavior, // Expose zoom behavior
     destroy: () => {
       window.removeEventListener('resize', handleResize)
       tooltip.remove()
+      svg.on('.zoom', null) // Remove zoom listeners
       svg.remove()
       console.log(`🌍 User Geo Map ${containerId} destroyed.`)
     },

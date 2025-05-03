@@ -29,7 +29,7 @@ export default {
 
   // Some additional configuration options and their defaults:
   theme: 'dashboard', // Using dashboard theme by default
-  sidebar: false, // Show the sidebar to access individual visualizations
+  sidebar: true, // Show the sidebar to access individual visualizations
   toc: false, // No table of contents needed for the dashboard
   pager: false, // No need for pager in a dashboard
   search: false, // Disable search for cleaner interface

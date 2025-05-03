@@ -481,6 +481,32 @@ function createApiMap(containerId, data = [], options = {}) {
   }
   // --- END MOVE HELPER FUNCTIONS ---
 
+  // <<<--- START NEW ZOOM CODE --->>>
+  // Define the zoom behavior
+  const zoomBehavior = d3
+    .zoom()
+    .scaleExtent([1, 8]) // Map specific extent (min zoom 1x, max 8x)
+    .filter((event) => !(event.type === 'wheel')) // Disable wheel zoom, keep drag pan
+    .on('zoom', zoomed) // Attach the zoom event handler
+
+  // Define the zoom event handler function
+  function zoomed(event) {
+    // Apply the transform to the main content group 'g'
+    // This will move/scale the world paths and circles
+    g.attr('transform', event.transform)
+  }
+
+  // Apply the zoom behavior to the SVG element
+  svg
+    .call(zoomBehavior)
+    .style('pointer-events', 'all') // Ensure SVG intercepts drag events
+    .style('cursor', 'grab') // Optional: Change cursor
+
+  // Optional: Update cursor during drag for better UX
+  zoomBehavior.on('start.cursor', () => svg.style('cursor', 'grabbing'))
+  zoomBehavior.on('end.cursor', () => svg.style('cursor', 'grab'))
+  // <<<--- END NEW ZOOM CODE --->>>
+
   /**
    * Updates the map with new sequence data, aggregating by country.
    * @param {Array} newData - Array of sequence data points (e.g., referenceMapData100).
@@ -949,7 +975,11 @@ function createApiMap(containerId, data = [], options = {}) {
       }
     })
 
-    // Legend update was already removed/commented out
+    // <<<--- ADD ZOOM RESET ON RESIZE (Optional but Recommended) --- >>>
+    // Reset zoom to identity on resize to avoid strange scaling issues
+    // Apply with a short transition
+    svg.transition().duration(200).call(zoomBehavior.transform, d3.zoomIdentity)
+    // <<<--- END ZOOM RESET --- >>>
   }
 
   // Add resize listener
@@ -1033,16 +1063,18 @@ function createApiMap(containerId, data = [], options = {}) {
   return {
     updateMap,
     highlightCountry,
-    svg: svg.node(),
+    svg: svg,
     g: g.node(),
     projection,
     handleResize,
     destroy: () => {
       window.removeEventListener('resize', handleResize)
       tooltip.remove()
+      svg.on('.zoom', null)
       svg.remove()
       console.log(`API Map ${containerId} destroyed.`)
     },
+    zoomBehavior: zoomBehavior,
   }
 }
 
