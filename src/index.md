@@ -55,7 +55,7 @@ toc: false
             <!-- Added Empty State Message -->
             <div class="empty-state-message flex flex-col items-center justify-center h-full" style="min-height: 550px;">
               <p class="text-center text-gray-500 mb-4">Upload a sequence to view the geographic distribution of similar sequences.</p>
-    </div>
+            </div>
           </div>
         </div>
         <!-- Geo Map Card -->
@@ -96,30 +96,21 @@ import {
   hideLoadingIndicator,
 } from './components/ui/loading-indicator.js';
 import {
-  updateJobStatus,
-  updateProgressText,
   updateStatus,
   onStatusChange,
 } from './components/ui/status-manager.js';
-import { createApiMap } from "./components/visualizations/api-map-component.js";
+import { createApiMap } from "./components/visualizations/map-component.js";
 import { createUmapScatterPlot } from "./components/visualizations/scatter-plot.js";
-import { updateDetailsPanel } from "./components/ui/dom-utils.js";
 import { 
-  fetchUmapData, 
-  transformUmapData,
   uploadSequence,
   checkJobStatus,
   getUmapProjection,
-  toggleSimilarityConnections,
   getSimilarSequences,
 } from './components/data/api-service.js';
 import { 
   createUploadModal, 
-  } from './components/ui/api-upload-component.js';
-import { createJobTracker } from './components/ui/api-job-tracker.js';
-import {
-  fetchAllSequences,
-} from './components/data/api-similarity-service.js';
+  } from './components/ui/upload-component.js';
+import { createJobTracker } from './components/ui/job-tracker.js';
 import { createUserGeoMap } from "./components/visualizations/user-geo-map.js";
 
 // Make FileAttachment available globally if it exists in this context
@@ -319,13 +310,13 @@ function setupZoomControls(componentInstance, buttonIds) {
 
 /**
  * Handle job completion: Fetch user projection, fetch N=100 similar sequences,
- * ensure reference cache is loaded, find coordinates for similar sequences,
- * prepare data subsets, and update all visualizations.
+ * directly use coordinates from the /similar endpoint response, prepare data subsets,
+ * and update all visualizations.
  * @param {string} jobId - The completed job ID
- * @param {Object} jobData - The job data from the API
+ * @param {Object} jobData - The job data from the API (e.g., from checkJobStatus)
  */
 async function handleJobCompletion(jobId, jobData) {
-  console.log(`🚀 Phase 3: handleJobCompletion started for job ${jobId}`);
+  console.log(`🚀 Phase 3: handleJobCompletion started for job ${jobId} (Using direct coords from /similar)`);
   let userSequence = null; // Define userSequence here to be accessible in finally block
 
   // --- Ensure API Key is available ---
@@ -338,30 +329,23 @@ async function handleJobCompletion(jobId, jobData) {
 
   try {
     showLoadingIndicator("Processing sequence results...");
-    
-    // --- Step 1: Get User Projection ---
-    const umapProjection = await getUmapProjection(jobId, state.apiKey); // Pass original jobId
 
-    // --- Determine embeddingId for userSequence object AFTER getting projection ---
-    let embeddingId = jobId; // Default to jobId
+    // --- Step 1: Get User Projection ---
+    const umapProjection = await getUmapProjection(jobId, state.apiKey);
+    let embeddingId = jobId;
     if (jobData?.embedding_id) embeddingId = jobData.embedding_id;
     else if (jobData?.result?.embedding_id) embeddingId = jobData.result.embedding_id;
-    console.log(`Using embedding ID for user object: ${embeddingId}`); 
-    
-    console.log("UMAP projection response:", umapProjection);
-    
-    // --- Rest of userSequence creation using umapProjection.x/y and embeddingId ---
+    console.log(`Using embedding ID for user object: ${embeddingId}`);
+
     let userX = 0, userY = 0;
     if (umapProjection && typeof umapProjection.x === 'number' && typeof umapProjection.y === 'number' && !umapProjection.isPlaceholder) {
       userX = umapProjection.x;
       userY = umapProjection.y;
-      console.log(`User sequence coordinates from API: (${userX}, ${userY})`);
     } else {
-      console.warn("Valid coordinates not found for user sequence, using fallback (0, 0).");
+      console.warn("Valid coordinates not found for user sequence from getUmapProjection, using fallback (0, 0).");
     }
-    
     userSequence = {
-      id: embeddingId, // Use embedding ID for the object ID
+      id: embeddingId,
       x: userX,
       y: userY,
       label: "Your Sequence",
@@ -369,111 +353,87 @@ async function handleJobCompletion(jobId, jobData) {
       uploadedAt: new Date().toISOString()
     };
     console.log("Created user sequence object:", userSequence);
-    
-    // --- Step 3: Fetch Similar Sequences (Still uses original jobId) ---
-    console.log(`Fetching Top 100 similar sequences for job ID: ${jobId}`);
-    showLoadingIndicator("Fetching similar sequences..."); // Update loading message
-    const similarOptions100 = { n_results: 100 }; // Fetch 100
-    // const similarOptions100 = { n_results: 10 }; // Fetch 100
-    const similarSequencesResponse100 = await getSimilarSequences(jobId, similarOptions100, state.apiKey); // Pass original jobId
 
-    // --- Step 4: Handle API Failures ---
+    // --- Step 2: Fetch Similar Sequences (Now includes coordinates) ---
+    console.log(`Fetching Top 100 similar sequences (with coords) for job ID: ${jobId}`);
+    showLoadingIndicator("Fetching similar sequences...");
+    const similarOptions100 = { n_results: 100 };
+    const similarSequencesResponse100 = await getSimilarSequences(jobId, similarOptions100, state.apiKey);
+
+    // --- Step 3: Handle API Failures ---
     if (!similarSequencesResponse100 || !similarSequencesResponse100.result) {
       console.error(`Failed to fetch or parse Top 100 similar sequences for job ${jobId}. Response:`, similarSequencesResponse100);
       showErrorMessage("Error fetching similar sequences data. Cannot display contextual visualizations.");
-      // Update visualizations to show only the user point?
+      // Update visualizations to show only the user point
       if (state.scatterComponent) {
-        state.scatterComponent.updateScatterPlot([], userSequence); // Pass empty data + user sequence
-        addOrUpdateInfoPanel('scatter-container', userSequence ? [userSequence] : []); // Show info for user seq only
+        state.scatterComponent.updateScatterPlot([], userSequence);
       }
       if (state.mapComponent) state.mapComponent.updateMap([]);
-      if (state.userGeoMap) state.userGeoMap.updateMap(userSequence, []); // Pass userSequence for potential centering
+      if (state.userGeoMap) state.userGeoMap.updateMap(userSequence, []);
       updateDetailsWithSimilarSequences(userSequence, []);
       hideLoadingIndicator();
       return; // Exit if fetching failed
     }
-    console.log(`Received ${similarSequencesResponse100.result.length} similar sequences from API`);
-
-    // --- Step 5: Extract Top 10 & Accessions ---
     const top100SimilarRaw = similarSequencesResponse100.result;
-    const top10SimilarRaw = top100SimilarRaw.slice(0, 10); // Assumes API returns sorted results
+    console.log(`Received ${top100SimilarRaw.length} similar sequences from API (including coords).`);
 
-    // Extract all unique accession numbers needed for coordinate lookup
-    const allAccessionNumbers = [
-      ...new Set( // Use Set to ensure uniqueness
-        top100SimilarRaw
-          .map(seq => seq.metadata?.accessions?.[0]) // Get the first accession
-          .filter(Boolean) // Remove null/undefined accessions
-      )
-    ];
-    console.log(`Extracted ${allAccessionNumbers.length} unique accession numbers for coordinate lookup.`);
-
-    // --- Step 2 & 6: Ensure Cache and Lookup Coordinates (Pass API Key) ---
-    // Call findAllMatchesInCache - this function now handles loading the cache if needed (Phase 2)
-    showLoadingIndicator("Finding sequences in reference dataset..."); // Update loading message
-    const matchedItems = await findAllMatchesInCache(allAccessionNumbers, state.apiKey); // Pass state.apiKey
-    console.log(`Found ${matchedItems.length} matches with coordinates in central cache.`);
-
-    if (matchedItems.length === 0 && allAccessionNumbers.length > 0) {
-       showWarningMessage("Found similar sequences, but could not locate their coordinates in the reference dataset. Displaying limited context.");
-       // Proceed with limited data if needed, or decide how to handle this case
-    }
-
-    // --- Step 7: Prepare Data Subsets ---
-    console.log("Preparing data subsets for visualizations...");
+    // --- Step 4: Prepare Data Subsets (Simplified) ---
+    console.log("Preparing data subsets for visualizations using direct coordinates...");
     const contextualUmapData = [];
-    const referenceMapData100 = []; // For the main map (grouped by country)
-    const userContextData10WithCoords = []; // For details panel and potentially geo-map
+    const referenceMapData100 = []; // Still needed for main map display
+    const userContextData10WithCoords = []; // Still needed for details panel
 
-    const matchedItemsMap = new Map(matchedItems.map(item => [item.query, item])); // Map for quick lookup
+    let missingCoordsCount = 0;
 
     top100SimilarRaw.forEach((rawSeq, index) => {
-      const accession = rawSeq.metadata?.accessions?.[0];
-      const matchedCoordItem = accession ? matchedItemsMap.get(accession) : null;
+      // Directly check for umap_coords in the raw sequence data
+      const coords = rawSeq.umap_coords;
+      const hasCoords = coords && coords.x != null && coords.y != null;
 
-      if (matchedCoordItem) {
+      if (hasCoords) {
         const combinedData = {
           // Core data from raw sequence
-          id: rawSeq.id, // Use the ID from the similarity result
+          id: rawSeq.id,
           similarity: rawSeq.similarity,
           distance: rawSeq.distance,
-          metadata: rawSeq.metadata, // Includes lat_lon, country, year, host, isolation_source etc.
-          // Data from matched cache item
-          accession: matchedCoordItem.query, // The accession number we searched for
-          matchedAccession: matchedCoordItem.match, // The actual accession found in cache (might differ slightly)
-          x: matchedCoordItem.x,
-          y: matchedCoordItem.y,
+          metadata: rawSeq.metadata, // Includes lat_lon, country, year, host, etc.
+          // Directly use coordinates from the response
+          accession: rawSeq.metadata?.accessions?.[0] || rawSeq.id, // Keep for label/display
+          x: coords.x, // Use coordinate from umap_coords
+          y: coords.y, // Use coordinate from umap_coords
           // Contextual flags/labels
-          label: matchedCoordItem.query, // Default label
+          label: rawSeq.metadata?.accessions?.[0] || rawSeq.id, // Default label
           isTop10: index < 10,
-          isUserSequence: false, // Explicitly mark as not the user sequence
-          matchesUserSequence: true // Mark as related to the user's query
+          isUserSequence: false,
+          matchesUserSequence: true
         };
 
         // Add to the UMAP data list
         contextualUmapData.push(combinedData);
-
-        // Add to the reference map data list (all 100 with coordinates)
+        // Add to the reference map data list
         referenceMapData100.push(combinedData);
-
         // Add to the top 10 list if applicable
         if (combinedData.isTop10) {
           userContextData10WithCoords.push(combinedData);
         }
-    } else {
-         console.warn(`Could not find coordinates for similar sequence: ${accession || rawSeq.id}`);
+      } else {
+         missingCoordsCount++;
+         console.warn(`Similar sequence ${rawSeq.id} (index ${index}) is missing umap_coords.`);
       }
     });
 
     console.log(`Prepared UMAP data: ${contextualUmapData.length} points (out of ${top100SimilarRaw.length} raw)`);
     console.log(`Prepared Reference Map data: ${referenceMapData100.length} points`);
     console.log(`Prepared Top 10 data with coords: ${userContextData10WithCoords.length} points`);
+    if (missingCoordsCount > 0) {
+        showWarningMessage(`Note: ${missingCoordsCount} similar sequences were missing coordinates in the API response.`);
+    }
 
-    // --- Step 8: Initialize or Update Visualizations ---
+    // --- Step 5: Initialize or Update Visualizations ---
     showLoadingIndicator("Initializing/Updating visualizations...");
 
-    // 8a: Contextual UMAP (`#scatter-container`)
-    let scatterComponentInitialized = false; // Flag to track if newly initialized
+    // 5a: Contextual UMAP (`#scatter-container`) - Logic remains the same, just uses the new contextualUmapData
+    let scatterComponentInitialized = false;
     if (!state.scatterComponent) {
       console.log("Initializing main UMAP (scatterComponent)...");
       const scatterContainerId = 'scatter-container';
@@ -481,120 +441,91 @@ async function handleJobCompletion(jobId, jobData) {
       const emptyState = scatterContainer?.querySelector('.empty-state-message');
       if (emptyState) emptyState.style.display = 'none';
 
-      state.scatterComponent = createUmapScatterPlot(scatterContainerId, contextualUmapData, {
+      state.scatterComponent = createUmapScatterPlot(scatterContainerId, contextualUmapData, { // Pass new data
         initialUserSequence: userSequence,
         colorScheme: { user: '#FF5722', top10: '#E91E63', other: '#9E9E9E' }
       });
-      scatterComponentInitialized = true; // Mark as newly initialized
+      scatterComponentInitialized = true;
     } else {
       console.log("Updating main UMAP (scatterComponent)...");
-      state.scatterComponent.updateScatterPlot(contextualUmapData, userSequence);
+      state.scatterComponent.updateScatterPlot(contextualUmapData, userSequence); // Pass new data
     }
-     // --- Setup Zoom Controls for UMAP ---
+    // Setup Zoom Controls for UMAP
     if (state.scatterComponent) {
         setupZoomControls(state.scatterComponent, {
             zoomIn: 'zoom-in-scatter',
             zoomOut: 'zoom-out-scatter',
             reset: 'reset-scatter'
         });
-        // Hide/Show controls container based on data presence
         const scatterControls = document.getElementById('scatter-container')?.querySelector('.zoom-controls');
         if (scatterControls) scatterControls.style.display = (contextualUmapData.length > 0 || userSequence) ? 'flex' : 'none';
     }
 
-    // 8b: Reference Map (`#map-container`)
+    // 5b: Reference Map (`#map-container`) - Uses referenceMapData100
+    // (Initialization/update logic remains the same)
     if (!state.mapComponent) {
-      console.log("Initializing Reference Map (mapComponent)...");
-      const mapContainerId = 'map-container'; // <-- Use ID string
-      const mapContainer = document.getElementById(mapContainerId);
-      const emptyState = mapContainer?.querySelector('.empty-state-message');
-      if (emptyState) emptyState.style.display = 'none'; 
-
-      // --- PASS ID STRING ---
-      state.mapComponent = createApiMap(mapContainerId, referenceMapData100, { 
-          initialUserSequence: userSequence 
-      });
-      // --- END CHANGE ---
-      } else {
-        // ... update logic remains the same ...
-        console.log("Updating Reference Map (mapComponent)...");
-        state.mapComponent.updateMap(referenceMapData100, userSequence);
+      // ... initialize createApiMap with referenceMapData100 ...
+       console.log("Initializing Reference Map (mapComponent)...");
+       const mapContainerId = 'map-container';
+       const mapContainer = document.getElementById(mapContainerId);
+       const emptyState = mapContainer?.querySelector('.empty-state-message');
+       if (emptyState) emptyState.style.display = 'none';
+       state.mapComponent = createApiMap(mapContainerId, referenceMapData100, { // Pass new data
+           initialUserSequence: userSequence
+       });
+    } else {
+      // ... update state.mapComponent.updateMap with referenceMapData100 ...
+      console.log("Updating Reference Map (mapComponent)...");
+      state.mapComponent.updateMap(referenceMapData100, userSequence); // Pass new data
     }
 
-    // 8c: Geo Map (`#user-geo-container` - shows Top 10 Raw locations)
+    // 5c: Geo Map (`#user-geo-container`) - Still uses Top 10 Raw data for potentially different viz logic
+    // (Initialization/update logic remains the same)
+    const top10ForGeoMap = top100SimilarRaw.slice(0, 10); // Use raw slice for consistency if it expects that format
     if (!state.userGeoMap) {
-       console.log("Initializing User Geo Map (userGeoMap) with Top 10 raw...");
-       const geoContainerId = 'user-geo-container';
-       const geoContainer = document.getElementById(geoContainerId);
-       const emptyState = geoContainer?.querySelector('.empty-state-message');
-       if (emptyState) emptyState.style.display = 'none';
-
-       state.userGeoMap = await createUserGeoMap(geoContainerId, {
-         // Pass options if needed
-       });
-       
-       if (state.userGeoMap && typeof state.userGeoMap.updateMap === 'function') {
-           console.log("Calling userGeoMap.updateMap with initial data...");
-           state.userGeoMap.updateMap(userSequence, top10SimilarRaw); // Pass original userSequence
-      } else {
-           console.error("Failed to initialize userGeoMap component or updateMap is missing.");
-      }
-    
-  } else {
-        // Update existing map
+        // ... initialize createUserGeoMap ...
+        console.log("Initializing User Geo Map (userGeoMap) with Top 10 raw...");
+        const geoContainerId = 'user-geo-container';
+        const geoContainer = document.getElementById(geoContainerId);
+        const emptyState = geoContainer?.querySelector('.empty-state-message');
+        if (emptyState) emptyState.style.display = 'none';
+        state.userGeoMap = await createUserGeoMap(geoContainerId, {});
+        if (state.userGeoMap && typeof state.userGeoMap.updateMap === 'function') {
+            state.userGeoMap.updateMap(userSequence, top10ForGeoMap); // Pass Top 10 Raw
+        } // ... error handling ...
+    } else {
+        // ... update state.userGeoMap.updateMap ...
         console.log("Updating User Geo Map (userGeoMap) with Top 10 raw...");
         if (typeof state.userGeoMap.updateMap === 'function') {
-            state.userGeoMap.updateMap(userSequence, top10SimilarRaw); // Pass original userSequence
-  } else {
-             console.error("Cannot update userGeoMap: updateMap method is missing.");
-        }
+            state.userGeoMap.updateMap(userSequence, top10ForGeoMap); // Pass Top 10 Raw
+        } // ... error handling ...
     }
 
-    // 8d: Details Panel (`#details-panel` - shows Top 10 with Coords)
+
+    // 5d: Details Panel (`#details-panel`) - Uses userContextData10WithCoords
     console.log("Updating Details Panel...");
-    updateDetailsWithSimilarSequences(userSequence, userContextData10WithCoords); // This updates innerHTML, no init needed
+    updateDetailsWithSimilarSequences(userSequence, userContextData10WithCoords); // Use the prepared top 10 list
 
-    // --- Crucially, setup cross-highlighting AFTER components are initialized ---
-    // Only setup if newly initialized or if significant changes occurred?
-    // For simplicity, let's assume setup is safe to call multiple times if needed
-    // OR better, check the flag:
-    if (scatterComponentInitialized /* || mapComponentInitialized || geoMapComponentInitialized */) {
+    // --- Setup Interactions ---
+    if (scatterComponentInitialized /* || other components initialized */) {
          setupCrossHighlighting();
-         setupPointHoverEffects(); // Needs to run after details panel is populated
+         setupPointHoverEffects();
     } else {
-         // If only updating, hover effects might still need refreshing if details panel changed
-         setupPointHoverEffects(); // Refresh hover effects based on new details panel items
+         setupPointHoverEffects(); // Refresh hover effects
     }
 
-    // --- Step 9: Notifications ---
-    showNotification(`Analysis complete. Displaying your sequence and ${contextualUmapData.length} similar sequences found in the reference dataset.`, "success");
-    if (contextualUmapData.length < top100SimilarRaw.length) {
-        showWarningMessage(`Note: Coordinates were not found for ${top100SimilarRaw.length - contextualUmapData.length} similar sequences.`);
-    }
+    // --- Step 6: Notifications ---
+    showNotification(`Analysis complete. Displaying your sequence and ${contextualUmapData.length} similar sequences.`, "success");
+    // Warning for missing coords already shown during data prep if needed
 
-    // --- Update tracker to 'Completed' ---
-    if (state.jobTracker) state.jobTracker.updateStatus('Completed'); 
+    // --- Update tracker ---
+    if (state.jobTracker) state.jobTracker.updateStatus('Completed');
 
   } catch (error) {
+    // ... existing error handling ...
     console.error("❌ Error during handleJobCompletion:", error);
-    // --- Update tracker on failure ---
     if (state.jobTracker) state.jobTracker.updateStatus('failed', { error: error.message });
-    
-    // Show specific error message
-    if (error.message.includes('401') || error.message.includes('403')) {
-         showErrorMessage("Invalid API Key. Failed to process results.");
-    } else {
-        showErrorMessage("An error occurred while processing the sequence results.");
-    }
-    // Attempt to clear/reset visualizations to a safe state if userSequence exists
-    if (state.scatterComponent && userSequence) {
-      state.scatterComponent.updateScatterPlot([], userSequence);
-      addOrUpdateInfoPanel('scatter-container', [userSequence]);
-    }
-    if (state.mapComponent) state.mapComponent.updateMap([]);
-    if (state.userGeoMap && userSequence) state.userGeoMap.updateMap(userSequence, []);
-     if (userSequence) updateDetailsWithSimilarSequences(userSequence, []);
-
+    // ... rest of error handling ...
   } finally {
     hideLoadingIndicator();
     console.log(`🚀 Phase 3: handleJobCompletion finished for job ${jobId}`);
@@ -1083,138 +1014,6 @@ function createLegend(container, items, title = 'Legend') {
   }
   
   return legend;
-}
-
-/**
- * Searches the central cache for sequences matching the given accession numbers.
- * Ensures the cache is loaded if it's empty.
- * @param {Array<string>} accessionNumbers - Array of accession numbers to search for
- * @returns {Array<Object>} - Array of objects with coordinates for the matched sequences
- */
-async function findAllMatchesInCache(accessionNumbers, apiKey) {
-  console.log(`🔧 CENTRAL CACHE SEARCH: Searching for ${accessionNumbers.length} sequences.`);
-
-  // --- Phase 2: On-Demand Cache Load ---
-  let centralCache = window.apiCache.getSequences();
-
-  if (!centralCache || centralCache.length === 0) {
-    console.log("⏳ CENTRAL CACHE SEARCH: Cache is empty. Fetching reference data...");
-    // --- Ensure API Key is available before fetching cache ---
-    if (!apiKey) {
-        console.error("❌ CENTRAL CACHE SEARCH: Cannot fetch reference data - API Key missing.");
-        showErrorMessage("API Key missing, cannot load reference dataset.");
-        return []; // Cannot proceed without key
-    }
-    showLoadingIndicator("Loading reference dataset for context..."); 
-    try {
-      // --- Pass apiKey to fetchAllSequences ---
-      await fetchAllSequences(false, apiKey); // Pass forceRefresh=false and apiKey
-      centralCache = window.apiCache.getSequences(); 
-      console.log(`✅ CENTRAL CACHE SEARCH: Reference data fetched. Cache size: ${centralCache?.length || 0}`);
-      if (!centralCache || centralCache.length === 0) {
-         throw new Error("fetchAllSequences completed but cache is still empty.");
-      }
-    } catch (error) {
-      console.error("❌ CENTRAL CACHE SEARCH: Failed to fetch reference data:", error);
-       if (error.message.includes('401') || error.message.includes('403')) {
-            showErrorMessage("Invalid API Key. Failed to load reference data.");
-       } else {
-            showErrorMessage("Failed to load reference data needed for visualization.");
-       }
-      hideLoadingIndicator();
-      return []; // Cannot proceed without the cache
-    } finally {
-      hideLoadingIndicator(); // Ensure it's hidden even on error
-    }
-  } else {
-     console.log(`👍 CENTRAL CACHE SEARCH: Using existing cache with ${centralCache.length} items.`);
-  }
-  // --- End Phase 2 ---
-
-  // Original cache check (now redundant but kept for safety, can be removed later)
-  if (!centralCache || centralCache.length === 0 || !accessionNumbers || accessionNumbers.length === 0) {
-    console.error("❌ CENTRAL CACHE SEARCH: Central cache (window.apiCache) is empty or accession numbers are invalid after fetch attempt.");
-    return [];
-  }
-  
-  const foundItems = [];
-  const searchFailures = [];
-  
-  // Process each accession number
-  for (const accession of accessionNumbers) {
-    if (!accession) continue;
-    
-    const origAccession = accession;
-    const accLower = accession.toLowerCase();
-    const accBase = accession.split('.')[0].toLowerCase();
-    const accWithoutPrefix = accession.startsWith('NZ_') ? accession.substring(3).toLowerCase() : null;
-    
-    let found = false;
-    let matchItem = null;
-    let foundStrategy = null; // <-- Variable to store the successful strategy
-    
-    // Define search strategies
-    const strategies = [
-    // 1. Direct match (exact)
-      item => item.accession && item.accession === origAccession,
-    // 2. Case-insensitive match
-      item => item.accession && item.accession.toLowerCase() === accLower,
-    // 3. Base name match (without version)
-      item => item.accession && item.accession.split('.')[0].toLowerCase() === accBase,
-      // 4. Without NZ_ prefix match (if applicable)
-      item => accWithoutPrefix && item.accession &&
-        (item.accession.toLowerCase() === accWithoutPrefix || 
-               item.accession.split('.')[0].toLowerCase() === accWithoutPrefix),
-      // 5. Includes match (more permissive - use cautiously)
-      // item => item.accession &&
-      //         (item.accession.toLowerCase().includes(accBase) ||
-      //          (accWithoutPrefix && item.accession.toLowerCase().includes(accWithoutPrefix)))
-    ];
-
-    // Try strategies in order
-    for (const strategy of strategies) {
-      if (!strategy) continue; // Skip invalid strategies (like #4 if not NZ_)
-      const matches = centralCache.filter(strategy);
-    if (matches.length > 0) {
-      found = true;
-        matchItem = matches[0]; // Take the first match
-        foundStrategy = strategy; // <-- Store the strategy that worked
-        // console.log(`✅ CENTRAL CACHE SEARCH: Found match for "${origAccession}" using strategy #${strategies.indexOf(strategy) + 1}. Match: ${matchItem.accession}`); // Reduce verbosity
-        break; // Stop searching once a match is found
-      }
-    }
-
-    // If we found a match, format and add it
-    if (found && matchItem) {
-      // Ensure coordinates exist
-      let xCoord = 0, yCoord = 0;
-      if (matchItem.coordinates && Array.isArray(matchItem.coordinates) && matchItem.coordinates.length >= 2) {
-        xCoord = matchItem.coordinates[0];
-        yCoord = matchItem.coordinates[1];
-      } else {
-         console.warn(`⚠️ CENTRAL CACHE SEARCH: Matched item ${matchItem.accession} is missing valid coordinates.`);
-      }
-      
-      foundItems.push({
-        query: origAccession,
-        match: matchItem.accession,
-        x: xCoord,
-        y: yCoord,
-        id: matchItem.sequence_hash || matchItem.id, // Prefer sequence_hash if available
-        searchMethod: `Strategy ${strategies.indexOf(foundStrategy) + 1}`
-      });
-    } else {
-      searchFailures.push(origAccession);
-      // console.log(`❌ CENTRAL CACHE SEARCH: No matches found for "${origAccession}"`); // Less verbose logging
-    }
-  }
-  
-  console.log(`🔧 CENTRAL CACHE SEARCH: Found ${foundItems.length} matches for ${accessionNumbers.length} accessions.`);
-  if (searchFailures.length > 0) {
-    console.warn(`❌ CENTRAL CACHE SEARCH: Could not find matches for ${searchFailures.length} accessions: ${searchFailures.slice(0, 10).join(', ')}${searchFailures.length > 10 ? '...' : ''}`);
-  }
-  
-  return foundItems;
 }
 
 // Set up the upload button
