@@ -6,7 +6,7 @@
 import * as d3 from 'd3'
 
 // API configuration
-const API_BASE_URL = 'http://54.169.186.71/api/v1'
+const API_BASE_URL = 'http://dev.pathgen.ai/api/v1'
 
 // Cache for sequences to avoid redundant API calls
 let cachedSequences = null

@@ -136,7 +136,7 @@ function createUploadModal(options = {}) {
 
   const apiKeyLabel = document.createElement('label')
   apiKeyLabel.htmlFor = 'api-key-input'
-  apiKeyLabel.textContent = 'API Key:'
+  apiKeyLabel.textContent = 'API Key: fb4dd306b76df778464624698a6f0351'
   apiKeyLabel.style.display = 'block'
   apiKeyLabel.style.marginBottom = '5px'
   apiKeyLabel.style.fontWeight = 'bold'

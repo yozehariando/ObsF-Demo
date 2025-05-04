@@ -25,7 +25,7 @@ toc: false
 <!-- UMAP Visualization Section -->
 <div class="grid grid-cols-1 gap-4 mb-4">
   <div class="card p-4">
-    <h2 class="mb-4">Contextual UMAP</h2>
+    <h2 class="mb-4">Top 100 Model-Similar Sequences – UMAP View</h2>
     <div id="scatter-container" style="width: 100%; height: 450px; position: relative; overflow: hidden;">
       <!-- Added Empty State Message -->
       <div class="empty-state-message flex flex-col items-center justify-center h-full">
@@ -50,7 +50,7 @@ toc: false
     <div class="left-map-column" style="display: flex; flex-direction: column; gap: 1rem;"> 
         <!-- Reference Map Card -->
     <div class="card p-4">
-          <h2 class="mb-4">Reference Map (Contextual)</h2>
+          <h2 class="mb-4">Geographic Distribution of Top 100 Sequences</h2>
           <div id="map-container" style="width: 100%; position: relative; overflow: hidden;">
             <!-- Added Empty State Message -->
             <div class="empty-state-message flex flex-col items-center justify-center h-full" style="min-height: 550px;">
@@ -103,7 +103,7 @@ toc: false
                  <span id="current-time-display-geo" class="text-xs font-mono">Time: ---</span>
                  <div class="flex gap-2">
                    <button id="play-pause-button-geo" class="btn btn-sm btn-outline-secondary" disabled>Play</button> <!-- Start disabled -->
-                   <button id="reset-time-button-geo" class="btn btn-sm btn-outline-secondary" disabled>Reset</button> <!-- Start disabled -->
+                   <button id="reset-time-button-geo" class="btn btn-sm btn-outline-secondary">Reset</button> <!-- Removed disabled -->
                  </div>
                </div>
             </div>
@@ -289,17 +289,7 @@ const state = {
   userGeoMap: null,
   apiKey: null, // <-- Add apiKey state
   simulatedCompletionTimes: {}, // <-- Add tracking for simulation
-  // --- Time-Lapse State ---
-  similarityThreshold: 0,   // 0-100
-  timeMin: null,            // Overall min time (year) from data
-  timeMax: null,            // Overall max time (year) from data
-  currentTime: null,        // Current year for filtering
-  timeSliderMin: 1900,      // Default slider min
-  timeSliderMax: new Date().getFullYear(), // Default slider max
-  isPlaying: false,         // Animation state
-  animationTimer: null,     // Holds the interval/timer ID
-  allSimilarSequencesData: [], // Store the full dataset for filtering
-  geoMapSequenceSubset: [], // Store the specific subset for the Geo Map animation
+  allSimilarSequencesData: [], // Store the full dataset (e.g., Top 100)
 };
 
 // <<<--- START NEW FUNCTION DEFINITION --- >>>
@@ -441,11 +431,14 @@ async function handleJobCompletion(jobId, jobData) {
     const referenceMapData100 = []; // Still needed for main map display
     const userContextData10WithCoords = []; // Still needed for details panel
 
-    // *** CREATE AND STORE THE GEO MAP SUBSET ***
-    const geoMapLimit = 10; // Define the limit for the Geo Map
-    state.geoMapSequenceSubset = []; // Initialize/clear the subset
+    // *** CREATE GEO MAP SUBSET LOCALLY for initialization ***
+    const geoMapLimit = 100;
+    let geoMapSequenceSubset = []; // Local variable for initialization
 
     let missingCoordsCount = 0;
+    let calculatedMinYear = null;
+    let calculatedMaxYear = null;
+    const yearsInData = [];
 
     top100SimilarRaw.forEach((rawSeq, index) => {
       const coords = rawSeq.umap_coords;
@@ -472,50 +465,43 @@ async function handleJobCompletion(jobId, jobData) {
         }
         // Add to the Geo Map subset if within the limit
         if (index < geoMapLimit) {
-           state.geoMapSequenceSubset.push(combinedData);
+           geoMapSequenceSubset.push(combinedData); // Add to local subset
         }
+
+        // --- Calculate Time Range --- // Moved inside loop
+        const year = combinedData.metadata?.first_year || combinedData.metadata?.years?.[0];
+        if (year != null) {
+            const parsedYear = parseInt(year);
+            if (!isNaN(parsedYear)) {
+                yearsInData.push(parsedYear);
+            }
+        }
+
       } else {
          missingCoordsCount++;
          console.warn(`Similar sequence ${rawSeq.id} (index ${index}) is missing umap_coords.`);
       }
     });
 
-    console.log(`Prepared UMAP data: ${contextualUmapData.length} points (out of ${top100SimilarRaw.length} raw)`);
+    console.log(`Prepared UMAP data: ${contextualUmapData.length} points`);
     console.log(`Prepared Reference Map data: ${referenceMapData100.length} points`);
-    console.log(`Prepared Top 10 data with coords: ${userContextData10WithCoords.length} points`);
-    console.log(`Stored Geo Map subset: ${state.geoMapSequenceSubset.length} points (Limit: ${geoMapLimit})`); // Log subset size
+    console.log(`Prepared Top 10 data: ${userContextData10WithCoords.length} points`);
+    console.log(`Created Geo Map initialization subset: ${geoMapSequenceSubset.length} points (Limit: ${geoMapLimit})`);
     if (missingCoordsCount > 0) {
         showWarningMessage(`Note: ${missingCoordsCount} similar sequences were missing coordinates in the API response.`);
     }
 
-    // --- Determine Time Range from Data ---
-    const years = state.allSimilarSequencesData
-        .map(d => d.metadata?.first_year || d.metadata?.years?.[0])
-        .filter(year => year != null && !isNaN(parseInt(year)))
-        .map(year => parseInt(year));
-
-    if (years.length > 0) {
-        state.timeMin = d3.min(years);
-        state.timeMax = d3.max(years);
-        // state.currentTime = state.timeMax; // REMOVE THIS - Initial state has no time filter
-        state.timeSliderMin = state.timeMin;
-        state.timeSliderMax = state.timeMax;
-        console.log(`Time range determined: ${state.timeMin} - ${state.timeMax}.`);
+    // --- Finalize Time Range Calculation --- //
+    if (yearsInData.length > 0) {
+        calculatedMinYear = d3.min(yearsInData);
+        calculatedMaxYear = d3.max(yearsInData);
+        console.log(`Time range calculated: ${calculatedMinYear} - ${calculatedMaxYear}.`);
     } else {
-        // Handle case where no valid years found
         const currentYear = new Date().getFullYear();
-        state.timeMin = currentYear - 10; // Default range if none found
-        state.timeMax = currentYear;
-        state.currentTime = currentYear;
-        state.timeSliderMin = state.timeMin;
-        state.timeSliderMax = state.timeMax;
-        console.warn("No valid year data found for time-lapse, defaulting to last 10 years.");
+        calculatedMinYear = currentYear - 10;
+        calculatedMaxYear = currentYear;
+        console.warn("No valid year data found, defaulting time range.");
     }
-    // *** SET INITIAL STATE EXPLICITLY ***
-    state.currentTime = null; // Set to null for initial render (no time filter)
-    state.similarityThreshold = 0; // Default similarity
-    updateTimelapseUI(); // Set initial UI state based on full range
-
 
     // --- Step 5: Initialize or Update Visualizations ---
     showLoadingIndicator("Initializing/Updating visualizations...");
@@ -567,108 +553,67 @@ async function handleJobCompletion(jobId, jobData) {
     }
 
     // 5c: Geo Map (`#user-geo-container`)
-    let geoMapComponentInitialized = false;
-    // const top10ForGeoMap = state.allSimilarSequencesData.slice(0, 25); // REMOVE THIS LINE
-
     if (!state.userGeoMap) { // FIRST TIME initialization block
         console.log('Attempting to create User Geo Map...');
-        console.log("⏳ PRE-AWAIT: About to call createUserGeoMap.");
         try {
             state.userGeoMap = await createUserGeoMap(
               'user-geo-container',
-              state.geoMapSequenceSubset, // *** PASS THE SUBSET HERE ***
+              geoMapSequenceSubset, // *** PASS LOCAL SUBSET FOR INIT ***
               userSequence,
-              { /* options */ },
-              (event, data) => handlePointHover(data, 'user-geo-map'),
-              handlePointLeave,
-              state.timeMax
+              { /* options */ }
+              // Removed hover/leave/year handlers - component handles internally
             );
-            console.log("✅ POST-AWAIT: createUserGeoMap call finished.");
-            console.log("🕵️‍♂️ Value after awaiting createUserGeoMap:", state.userGeoMap);
 
-        } catch (creationError) {
-             console.error("❌ CRITICAL ERROR during createUserGeoMap await:", creationError);
-             state.userGeoMap = null; // Ensure state reflects failure
-        }
+            if (state.userGeoMap) {
+               console.log("👍 Geo Map created successfully.");
+               // Setup zoom controls (logic remains the same)
+               if (state.userGeoMap.svg && state.userGeoMap.zoomBehavior) {
+                   setupZoomControls(state.userGeoMap, { zoomIn: 'zoom-in-geo', zoomOut: 'zoom-out-geo', reset: 'reset-geo' });
+                   const zoomControls = document.getElementById('user-geo-container')?.querySelector('.zoom-controls');
+                   if (zoomControls) zoomControls.style.display = 'flex';
+               } else { /* ... error log ... */ }
 
-        // Check if creation succeeded *after* the await block
-        if (state.userGeoMap) {
-            console.log("👍 Map object seems valid after await, proceeding with setup...");
-            geoMapComponentInitialized = true; // Mark as initialized *here*
-
-            // Setup zoom controls
-            if (state.userGeoMap.svg && state.userGeoMap.zoomBehavior) {
-               console.log("  Setting up zoom controls...");
-               setupZoomControls(state.userGeoMap, { // Pass object with IDs
-                  zoomIn: 'zoom-in-geo',
-                  zoomOut: 'zoom-out-geo',
-                  reset: 'reset-geo'
-               });
-               const zoomControls = document.getElementById('user-geo-container')?.querySelector('.zoom-controls');
-               if (zoomControls) zoomControls.style.display = 'flex'; // Show zoom controls
-            } else {
-              console.error("  ❌ Failed to get necessary elements from userGeoMap for zoom setup after await.", state.userGeoMap);
-            }
-
-            // Setup time-lapse controls - Now check for updateMap on the resolved object
-            if (state.timeMin !== undefined && state.timeMax !== undefined && typeof state.userGeoMap.updateMap === 'function') {
-               console.log("  ✅ Map object has updateMap, setting up time-lapse controls...");
-               setupTimeLapseControls(state.userGeoMap, state.timeMin, state.timeMax); // Setup handlers
-               updateTimelapseUI(); // Update UI display (slider range, labels)
-               const timeControlsDiv = document.getElementById('timelapse-controls-geo'); // Show controls
-               if (timeControlsDiv) timeControlsDiv.style.display = 'block';
-            } else {
-                 console.error("  ❌ Cannot setup time-lapse: Missing year range or updateMap function after await.", {
-                     hasUpdateMap: typeof state.userGeoMap?.updateMap,
-                     minYear: state.timeMin,
-                     maxYear: state.timeMax
-                 });
-                  const timeControlsDiv = document.getElementById('timelapse-controls-geo');
-                  if(timeControlsDiv) timeControlsDiv.style.display = 'none'; // Hide if setup fails
-            }
-        } else {
-             console.error("❌ Map object is null or undefined after await/catch block.");
-             // Hide controls if map creation failed
-             const zoomControls = document.getElementById('user-geo-container')?.querySelector('.zoom-controls');
-             const timeControls = document.getElementById('timelapse-controls-geo');
-             if(zoomControls) zoomControls.style.display = 'none';
-             if(timeControls) timeControls.style.display = 'none';
-        }
-
+               // *** SET TIME RANGE and SETUP CONTROLS ***
+               if (calculatedMinYear !== null && calculatedMaxYear !== null) {
+                   console.log("  -> Setting initial time range and setting up controls...");
+                   state.userGeoMap.setTimeRange(calculatedMinYear, calculatedMaxYear);
+                   setupTimeLapseControls(state.userGeoMap); // Pass the component instance
+                   const timeControlsDiv = document.getElementById('timelapse-controls-geo');
+                   if (timeControlsDiv) timeControlsDiv.style.display = 'block';
+               } else {
+                   console.error("  ❌ Cannot setup time-lapse: Invalid time range calculated.");
+                   const timeControlsDiv = document.getElementById('timelapse-controls-geo');
+                   if(timeControlsDiv) timeControlsDiv.style.display = 'none';
+               }
+            } else { /* ... handle creation failure ... */ }
+        } catch (creationError) { /* ... handle creation error ... */ }
     } else { // SUBSEQUENT TIMES update block
       console.log('Updating existing User Geo Map (userGeoMap)...');
-      // Ensure map object exists and has updateMap
-      if (state.userGeoMap && typeof state.userGeoMap.updateMap === 'function') {
-         // Determine the current filter year (use max if currentTime isn't set)
-         const updateYear = (state.currentTime !== undefined && state.currentTime !== null) ? state.currentTime : state.timeMax;
-         console.log(`  Calling updateMap with year: ${updateYear}`);
-         // Call updateMap with the full dataset and the current filter year
-         state.userGeoMap.updateMap(state.allSimilarSequencesData, userSequence, updateYear);
+      if (state.userGeoMap && typeof state.userGeoMap.updateData === 'function') {
+          // *** UPDATE DATA using the component's method ***
+          state.userGeoMap.updateData(userSequence, geoMapSequenceSubset);
 
-         // Ensure controls are updated/visible
-         const timeControlsDiv = document.getElementById('timelapse-controls-geo');
-         if (timeControlsDiv && state.timeMin !== undefined && state.timeMax !== undefined) {
-             if (timeControlsDiv.style.display === 'none') {
-                 console.log("Re-setting up and showing timelapse controls on update...");
-                 setupTimeLapseControls(state.userGeoMap, state.timeMin, state.timeMax); // Re-attach listeners
-                 timeControlsDiv.style.display = 'block'; // Ensure visible
-             }
-             updateTimelapseUI(); // Always update UI to reflect current range/value
-             console.log(`Ensured slider range is ${state.timeMin}-${state.timeMax} on update.`);
-         }
-         // Ensure zoom controls are visible
-         const zoomControls = document.getElementById('user-geo-container')?.querySelector('.zoom-controls');
-         if (zoomControls) zoomControls.style.display = 'flex';
+          // *** UPDATE TIME RANGE ***
+          if (calculatedMinYear !== null && calculatedMaxYear !== null) {
+              state.userGeoMap.setTimeRange(calculatedMinYear, calculatedMaxYear);
+              console.log(`Ensured time range is ${calculatedMinYear}-${calculatedMaxYear} on update.`);
+          } else {
+              console.warn("Could not update time range on existing map.");
+          }
+          // Ensure controls remain visible if they should be
+          const timeControlsDiv = document.getElementById('timelapse-controls-geo');
+          if (timeControlsDiv && calculatedMinYear !== null) timeControlsDiv.style.display = 'block';
+          const zoomControls = document.getElementById('user-geo-container')?.querySelector('.zoom-controls');
+          if (zoomControls) zoomControls.style.display = 'flex';
       } else {
-          console.error("❌ Cannot update User Geo Map: instance or updateMap function is missing.", state.userGeoMap);
+          console.error("❌ Cannot update User Geo Map: instance or updateData function is missing.", state.userGeoMap);
       }
     }
-    // Remove empty state message if map was initialized or updated successfully
+    // Remove empty state message if map exists
     if (state.userGeoMap) {
         const emptyState = document.getElementById('user-geo-container')?.querySelector('.empty-state-message');
         if (emptyState) emptyState.style.display = 'none';
     }
-
 
     // 5d: Details Panel (`#details-panel`)
     console.log("Updating Details Panel...");
@@ -679,10 +624,6 @@ async function handleJobCompletion(jobId, jobData) {
     setupCrossHighlighting();
     setupPointHoverEffects();
     // addDetailsPanelHoverListeners(); // This line should remain commented/deleted
-
-    // *** ADD INITIAL MAP UPDATE CALL HERE ***
-    console.log("🚀 Triggering initial Geo Map render...");
-    filterAndUpdateMap(); // Call this to draw the initial map state
 
     // --- Step 6: Notifications ---
     showNotification(`Analysis complete. Displaying your sequence and ${contextualUmapData.length} similar sequences.`, "success");
@@ -916,10 +857,6 @@ function setupCrossHighlighting() {
   } else {
       console.warn("Main UMAP component (scatterComponent) does not support cross-highlighting setup.");
   }
-
-  // --- Highlighting originating FROM the Geo Map (userGeoMap) ---
-  // REMOVED THE if/else block that tried to set the callback.
-  // We will ONLY use the direct event listeners below for geo map -> other highlighting.
 
   // Define the handler function once
   const highlightFromGeoMap = (pointId, highlight) => {
@@ -1333,17 +1270,6 @@ resetButton?.addEventListener('click', () => {
   state.mapComponent = null;
   state.userGeoMap = null;
 
-  // --- Reset Time-Lapse State --- //
-  stopAnimation(); // Make sure animation stops
-  state.similarityThreshold = 0; // Reset similarity
-  state.timeMin = null;          // Clear time range
-  state.timeMax = null;
-  state.currentTime = null;        // Reset current time filter to null
-  state.timeSliderMin = 1900;      // Reset slider defaults
-  state.timeSliderMax = new Date().getFullYear();
-  state.isPlaying = false;
-  updateTimelapseUI(); // Update UI to reflect reset state (should disable sliders)
-
   // Hide Time-Lapse Controls container
   const timelapseControlsGeo = document.getElementById('timelapse-controls-geo');
   if (timelapseControlsGeo) timelapseControlsGeo.style.display = 'none';
@@ -1351,397 +1277,75 @@ resetButton?.addEventListener('click', () => {
   showInfoMessage("Analysis reset. Ready for new upload.");
 });
 
-// --- START TIME-LAPSE HELPER FUNCTIONS (Update IDs) ---
-
-/**
- * Updates the time-lapse UI elements (sliders, labels) based on current state.
- */
-function updateTimelapseUI() {
-    const similaritySlider = document.getElementById('similarity-slider-geo'); // ID updated
-    const similarityValue = document.getElementById('similarity-value-geo');   // ID updated
-    const timeSlider = document.getElementById('time-slider-geo');           // ID updated
-    const timeMinLabel = document.getElementById('time-min-label-geo');     // ID updated
-    const timeMaxLabel = document.getElementById('time-max-label-geo');     // ID updated
-    const currentTimeDisplay = document.getElementById('current-time-display-geo'); // ID updated
-    const playPauseButton = document.getElementById('play-pause-button-geo'); // ID updated
-    const resetTimeButton = document.getElementById('reset-time-button-geo'); // ID updated
-
-    if (similaritySlider) similaritySlider.value = state.similarityThreshold;
-    if (similarityValue) similarityValue.textContent = `${state.similarityThreshold}%`;
-
-    if (state.timeMin !== null && state.timeMax !== null) {
-        if (timeSlider) {
-            timeSlider.min = state.timeSliderMin;
-            timeSlider.max = state.timeSliderMax;
-            timeSlider.value = state.currentTime ?? state.timeSliderMin;
-            timeSlider.disabled = false;
-        }
-        if (timeMinLabel) timeMinLabel.textContent = state.timeMin;
-        if (timeMaxLabel) timeMaxLabel.textContent = state.timeMax;
-        if (currentTimeDisplay) currentTimeDisplay.textContent = `Year: ${state.currentTime ?? '---'}`; // Update label
-        if (playPauseButton) playPauseButton.disabled = false;
-        if (resetTimeButton) resetTimeButton.disabled = false; // Enable reset button too
-    } else {
-        // Disable time controls if no time range
-        if (timeSlider) timeSlider.disabled = true;
-        if (timeMinLabel) timeMinLabel.textContent = 'N/A';
-        if (timeMaxLabel) timeMaxLabel.textContent = 'N/A';
-        if (currentTimeDisplay) currentTimeDisplay.textContent = 'Year: N/A';
-        if (playPauseButton) playPauseButton.disabled = true;
-        if (resetTimeButton) resetTimeButton.disabled = true;
-    }
-
-    // Update Play/Pause button text
-    if (playPauseButton) {
-        playPauseButton.textContent = state.isPlaying ? 'Pause' : 'Play';
-    }
-}
-
-/**
- * Filters the map data based on current state and triggers a map update.
- * This function now acts as the central point to call the component's update method.
- */
-function filterAndUpdateMap() {
-    console.log(`➡️ filterAndUpdateMap called. Time: ${state.currentTime}, Similarity: ${state.similarityThreshold}%`);
-    // Target the userGeoMap component
-    // *** PASS THE SUBSET INSTEAD OF FULL DATA ***
-    if (state.userGeoMap && typeof state.userGeoMap.updateMap === 'function' && state.geoMapSequenceSubset) {
-        console.log(`   📞 Calling state.userGeoMap.updateMap with ${state.geoMapSequenceSubset.length} sequences...`);
-        state.userGeoMap.updateMap(
-            state.userSequence,             // Argument 1: User sequence object
-            state.geoMapSequenceSubset,     // Argument 2: *** THE SUBSET ***
-            state.currentTime,              // Argument 3: Current year for highlighting
-            state.similarityThreshold / 100 // Argument 4: Similarity threshold (0-1 range)
-        );
-        updateTimelapseUI(); // Ensure UI reflects current state
-    } else {
-         console.warn("Cannot update Geo map: component, updateMap function, or subset data missing.", {
-            mapExists: !!state.userGeoMap,
-            hasUpdateMap: typeof state.userGeoMap?.updateMap,
-            hasSubsetData: !!state.geoMapSequenceSubset
-         });
-    }
-}
-
-// /** Stops the time-lapse animation timer. */
-// function stopAnimation() {
-//     if (!state.isPlaying) return; // Already stopped
-//     console.log("⏸️ Stopping animation");
-//     state.isPlaying = false;
-//     if (state.animationTimer) {
-//         clearTimeout(state.animationTimer);
-//         state.animationTimer = null;
-//     }
-//     const playPauseButton = document.getElementById('play-pause-button-geo');
-//     if(playPauseButton) playPauseButton.textContent = 'Play';
-// }
-
-// --- END TIME-LAPSE HELPER FUNCTIONS ---
-
 // --- Update Event Listeners (within DOMContentLoaded, update IDs) ---
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("DOM loaded, Initializing UI (Listeners moved to setupTimeLapseControls).");
-
-    // *** REMOVE ALL LISTENERS FROM HERE ***
-    // const similaritySlider = document.getElementById('similarity-slider-geo');
-    // const timeSlider = document.getElementById('time-slider-geo');
-    // const playPauseButton = document.getElementById('play-pause-button-geo');
-    // const resetTimeButton = document.getElementById('reset-time-button-geo');
-
-    // if (similaritySlider) { ... } else { console.warn("Similarity slider not found"); }
-    // if (timeSlider) { ... } else { console.warn("Time slider not found"); }
-    // if (playPauseButton) { ... } else { console.warn("Play/Pause button not found"); }
-    // if (resetTimeButton) { ... } else { console.warn("Reset Time button not found"); }
-
-    // updateTimelapseUI(); // Initial UI update can stay or move, likely not critical here
+    console.log("DOM loaded, Initializing UI.");
+    // Listeners for time-lapse are now attached in setupTimeLapseControls
 });
 
 /**
- * Sets up the time-lapse controls (slider, play/pause) for the user geo map.
- * Attaches event listeners.
- * @param {object} componentInstance - The user geo map component instance.
- * @param {number} minYear - The minimum year in the dataset.
- * @param {number} maxYear - The maximum year in the dataset.
+ * Sets up the time-lapse controls and attaches listeners that call the component's methods.
+ * @param {object} componentInstance - The user geo map component instance (state.userGeoMap).
  */
-function setupTimeLapseControls(componentInstance, minYear, maxYear) {
-  console.log(`🕰️ Configuring time-lapse controls UI & Listeners: ${minYear}-${maxYear}`);
-
-  // Update state
-  state.timeMin = minYear;
-  state.timeMax = maxYear;
-  state.timeSliderMin = minYear;
-  state.timeSliderMax = maxYear;
+function setupTimeLapseControls(componentInstance) {
+  // Check if componentInstance is valid and has expected methods
+  if (!componentInstance || typeof componentInstance.play !== 'function') {
+      console.error("Cannot setup time-lapse controls: Invalid component instance provided.", componentInstance);
+      return;
+  }
+  console.log(`🕰️ Setting up time-lapse control listeners for Geo Map.`);
 
   // Get elements
   const similaritySlider = document.getElementById('similarity-slider-geo');
   const timeSlider = document.getElementById('time-slider-geo');
   const playPauseButton = document.getElementById('play-pause-button-geo');
   const resetTimeButton = document.getElementById('reset-time-button-geo');
-  const controlsDiv = document.getElementById('timelapse-controls-geo');
 
-  // *** ADD EVENT LISTENERS HERE ***
+  // Attach listeners calling component methods
   if (similaritySlider) {
-        // Remove previous listener (optional but safer if setup could run multiple times)
-        similaritySlider.replaceWith(similaritySlider.cloneNode(true));
+        similaritySlider.replaceWith(similaritySlider.cloneNode(true)); // Clear old listeners
         document.getElementById('similarity-slider-geo').addEventListener('input', (e) => {
-            state.similarityThreshold = parseInt(e.target.value);
+            componentInstance.setSimilarity(e.target.value); // Call component method
+            // Update label directly (component's _updateExternalUI doesn't run on setSimilarity)
             const similarityValueEl = document.getElementById('similarity-value-geo');
-            if (similarityValueEl) similarityValueEl.textContent = `${state.similarityThreshold}%`;
-            filterAndUpdateMap();
+            if (similarityValueEl) similarityValueEl.textContent = `${e.target.value}%`;
         });
-        console.log("  -> Similarity slider listener attached.");
-    } else { console.warn("  -> Similarity slider not found during setup."); }
+        console.log("  -> Similarity listener attached.");
+    } else { /* ... warn ... */ }
 
     if (timeSlider) {
-        timeSlider.replaceWith(timeSlider.cloneNode(true));
+        timeSlider.replaceWith(timeSlider.cloneNode(true)); // Clear old listeners
         document.getElementById('time-slider-geo').addEventListener('input', (e) => {
-            console.log("🕰️ Time Slider INPUT detected");
-            if (state.isPlaying) stopAnimation();
-            state.currentTime = parseInt(e.target.value);
-            updateTimelapseUI();
-            filterAndUpdateMap();
+             console.log("🕰️ Time Slider INPUT detected - calling componentInstance.setYear()");
+             componentInstance.setYear(e.target.value); // Call component method
         });
         console.log("  -> Time slider listener attached.");
-    } else { console.warn("  -> Time slider not found during setup."); }
+    } else { /* ... warn ... */ }
 
     if (playPauseButton) {
-        playPauseButton.replaceWith(playPauseButton.cloneNode(true));
+        playPauseButton.replaceWith(playPauseButton.cloneNode(true)); // Clear old listeners
         document.getElementById('play-pause-button-geo').addEventListener('click', () => {
-            console.log(`⏯️ Play/Pause button clicked. Current state.isPlaying: ${state.isPlaying}`);
-            togglePlayPause();
+            console.log(`⏯️ Play/Pause button clicked.`);
+            if (componentInstance.isPlaying()) {
+                 console.log("   -> Calling componentInstance.pause()");
+                 componentInstance.pause();
+            } else {
+                 console.log("   -> Calling componentInstance.play()");
+                 componentInstance.play();
+            }
         });
-        console.log("  -> Play/Pause button listener attached.");
-    } else { console.warn("  -> Play/Pause button not found during setup."); }
+        console.log("  -> Play/Pause listener attached.");
+    } else { /* ... warn ... */ }
 
     if (resetTimeButton) {
-        resetTimeButton.replaceWith(resetTimeButton.cloneNode(true));
+        resetTimeButton.replaceWith(resetTimeButton.cloneNode(true)); // Clear old listeners
         document.getElementById('reset-time-button-geo').addEventListener('click', () => {
-            console.log("🔄 Reset Time button clicked."); // Added log
-            stopAnimation();
-            state.currentTime = state.timeMax ?? state.timeSliderMax;
-            filterAndUpdateMap();
+            console.log("🔄 Reset Time button clicked - calling componentInstance.resetTime()");
+            componentInstance.resetTime(); // Call component method
         });
-        console.log("  -> Reset Time button listener attached.");
-    } else { console.warn("  -> Reset Time button not found during setup."); }
+        console.log("  -> Reset Time listener attached.");
+    } else { /* ... warn ... */ }
 
-  // Update UI and show controls
-  updateTimelapseUI();
-  if (controlsDiv) {
-      controlsDiv.style.display = 'block';
-      console.log('🕰️ Time-lapse controls UI configured, listeners attached, and displayed.');
-  }
-}
-
-/**
- * Handles mouse hover events for visualization points or details panel items.
- * Applies highlighting to the point and its counterparts in other views.
- * @param {object} data - The data object associated with the hovered point/item.
- * @param {string} sourceComponent - Identifier for the component where hover originated.
- */
-function handlePointHover(data, sourceComponent) {
-  if (!data || !data.id) return; // Exit if no valid data or id
-  // console.log(`--- Hovering point: ${data.id}. Source: ${sourceComponent} ---`); // Optional debug log
-
-  const pointId = data.id;
-
-  // --- Remove previous highlights before applying new ones ---
-  handlePointLeave('internal-hover-call'); // Call leave first to clear state
-
-  // --- Apply highlight in UMAP ---
-  if (state.scatterComponent && state.scatterComponent.svg) {
-    state.scatterComponent.svg.selectAll(`.point[data-id="${pointId}"]`)
-      .classed('highlighted', true);
-    // console.log(`Highlighted point ${pointId} in UMAP`);
-  }
-
-  // --- Apply highlight in Geo Map ---
-  if (state.userGeoMap && state.userGeoMap.svg) {
-     state.userGeoMap.svg.selectAll(`.geo-point[data-id="${pointId}"]`)
-        .classed('highlighted', true);
-    // console.log(`Highlighted point ${pointId} in Geo Map`);
-  }
-
-  // --- Apply highlight in Reference Map (if applicable) ---
-  // Determine country from data, highlight corresponding bubble
-  if (state.mapComponent && state.mapComponent.svg && data.metadata && data.metadata.country) {
-    const countryName = data.metadata.country;
-     state.mapComponent.svg.selectAll(`.country-bubble[data-country="${countryName}"]`)
-       .classed('highlighted', true);
-     // console.log(`Highlighted country bubble ${countryName} in Ref Map`);
-  }
-
-
-  // --- Apply highlight in Details Panel ---
-  const detailsContainer = document.getElementById('details-content');
-  if (detailsContainer) {
-    const detailItem = detailsContainer.querySelector(`.detail-item[data-id="${pointId}"]`);
-    if (detailItem) {
-      detailItem.classList.add('highlighted');
-      // Scroll into view if needed and not triggered *by* the details panel itself
-      // if (sourceComponent !== 'details') {
-      //   detailItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      // }
-       // console.log(`Highlighted item ${pointId} in Details Panel`);
-    }
-  }
-
-  // Show tooltip (if implemented)
-  // showTooltip(event, data); // Assuming event is available if needed
-}
-
-
-/**
- * Handles mouse leave events for visualization points or details panel items.
- * Removes highlighting from all related elements across visualizations.
- * @param {string} sourceComponent - Identifier for the component where the leave event originated (e.g., 'umap', 'geo-map', 'details'). Not strictly needed for clearing, but good practice.
- */
-function handlePointLeave(sourceComponent) {
-  // console.log(`--- Leaving point. Source: ${sourceComponent} ---`); // Optional debug log
-
-  // --- Clear highlights from UMAP ---
-  if (state.scatterComponent && state.scatterComponent.svg) {
-    state.scatterComponent.svg.selectAll('.point.highlighted')
-      .classed('highlighted', false);
-    // console.log(`Cleared highlights in UMAP`);
-  }
-
-  // --- Clear highlights from Geo Map ---
-   if (state.userGeoMap && state.userGeoMap.svg) {
-    state.userGeoMap.svg.selectAll('.geo-point.highlighted') // Ensure class name matches points
-        .classed('highlighted', false);
-    // console.log(`Cleared highlights in Geo Map`);
-  }
-
-  // --- Clear highlights from Reference Map ---
-   if (state.mapComponent && state.mapComponent.svg) {
-     state.mapComponent.svg.selectAll('.country-bubble.highlighted') // Ensure class name matches bubbles
-         .classed('highlighted', false);
-     // console.log(`Cleared highlights in Ref Map`);
-   }
-
-
-  // --- Clear highlights from Details Panel ---
-  const detailsContainer = document.getElementById('details-content');
-  if (detailsContainer) {
-    detailsContainer.querySelectorAll('.detail-item.highlighted')
-      .forEach(el => el.classList.remove('highlighted'));
-    // console.log(`Cleared highlights in Details Panel`);
-  }
-
-  // Hide tooltip (if implemented)
-  // hideTooltip();
-}
-
-// --- Refactored Time-Lapse Control Logic ---
-
-/** Function to get animation speed (currently fixed) */
-function getAnimationSpeed() {
-    // console.log("⚙️ Getting animation speed"); // Debug log
-    return 1000; // milliseconds
-}
-
-/** Shared function to advance the time step */
-function stepTime() {
-    console.log("⏰ Stepping time...");
-    if (!state.isPlaying || state.timeMin === null || state.timeMax === null) {
-        console.log("   -> Animation not playing or time range invalid, stopping step.");
-        stopAnimation();
-        return;
-    }
-
-    let currentYear = state.currentTime;
-    if (currentYear === null) currentYear = state.timeMin - 1;
-
-    if (currentYear < state.timeMax) {
-        currentYear++;
-        console.log(`   -> New current time: ${state.currentTime}`);
-        state.currentTime = currentYear;
-
-        const timeSlider = document.getElementById('time-slider-geo');
-        if (timeSlider) timeSlider.value = state.currentTime;
-        filterAndUpdateMap();
-
-        if (state.isPlaying) { // Check again before scheduling next step
-            const speed = getAnimationSpeed();
-            console.log(`   -> Scheduling next step in ${speed}ms`);
-            state.animationTimer = setTimeout(stepTime, speed);
-        }
-    } else {
-        // *** STOP AT END ***
-        console.log("   -> Reached end year. Stopping animation.");
-        stopAnimation(); // Call stopAnimation instead of looping
-    }
-}
-
-/** Starts the time-lapse animation timer. */
-function startAnimation() {
-    // *** ADD LOG HERE ***
-    console.log(`▶️ startAnimation called. isPlaying: ${state.isPlaying}, timeMin: ${state.timeMin}, timeMax: ${state.timeMax}`);
-    if (state.isPlaying) {
-        console.log("   -> Already playing, doing nothing.");
-        return;
-    }
-    if (state.timeMin === null || state.timeMax === null) {
-        console.warn("   -> Cannot start animation: Time range not set.");
-        return;
-    }
-
-    // Get the button element
-    const playPauseButton = document.getElementById('play-pause-button-geo');
-    if (!playPauseButton) {
-        console.error("   -> Cannot start animation: Play/Pause button not found.");
-        return;
-    }
-
-    state.isPlaying = true;
-    playPauseButton.textContent = 'Pause';
-    console.log("   -> State set to playing, button text updated.");
-
-    // *** Determine starting point ***
-    if (state.currentTime === null || state.currentTime >= state.timeMax) {
-        console.log("   -> Current time at end or null, resetting to start.");
-        state.currentTime = state.timeMin;
-        // Update slider visually immediately
-        const timeSlider = document.getElementById('time-slider-geo');
-        if (timeSlider) timeSlider.value = state.currentTime;
-        updateTimelapseUI(); // Update labels
-    }
-    // *** End starting point logic ***
-
-    console.log(`   -> Starting animation loop from year: ${state.currentTime}`);
-    stepTime(); // Start the first step immediately
-}
-
-/** Stops the time-lapse animation timer. */
-function stopAnimation() {
-    console.log("⏸️ stopAnimation called.");
-    if (!state.isPlaying && state.animationTimer === null) {
-        console.log("   -> Already stopped, doing nothing.");
-        return;
-    }
-
-    state.isPlaying = false;
-    if (state.animationTimer) {
-        clearTimeout(state.animationTimer);
-        state.animationTimer = null;
-        console.log("   -> Cleared animation timer.");
-    }
-    const playPauseButton = document.getElementById('play-pause-button-geo');
-    if (playPauseButton) {
-        playPauseButton.textContent = 'Play';
-        console.log("   -> Button text updated to Play.");
-    }
-}
-
-/** Toggles Play/Pause state - This is called by the button click listener */
-function togglePlayPause() {
-    // *** ADD LOG HERE ***
-    console.log(`⏯️ togglePlayPause called. Current state.isPlaying: ${state.isPlaying}`);
-    if (state.isPlaying) {
-        console.log("   -> Calling stopAnimation()");
-        stopAnimation();
-    } else {
-        console.log("   -> Calling startAnimation()");
-        startAnimation();
-    }
+    // Initial UI state is set by the component via setTimeRange -> _updateExternalUI
+    console.log('🕰️ Time-lapse control listeners attached.');
 }

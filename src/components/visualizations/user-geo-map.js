@@ -2,58 +2,77 @@ import * as d3 from 'd3'
 import * as topojson from 'topojson-client'
 
 /**
- * Create a geographic map visualization for user sequences and their top similar matches
+ * Create a geographic map visualization for user sequences and their top similar matches,
+ * including encapsulated time-lapse functionality.
  * @param {string} containerId - ID of the container element
+ * @param {Array} initialData - The initial subset of similar sequences to display.
+ * @param {Object|null} initialUserSequence - The initial user sequence data.
  * @param {Object} options - Configuration options
- * @returns {Promise<Object>} Map component API (returns a Promise)
+ * @returns {Promise<Object|null>} Map component API (returns a Promise), or null on critical error.
  */
-export async function createUserGeoMap(containerId, options = {}) {
-  console.log('🌍 Creating user geo map for container:', containerId)
+export async function createUserGeoMap(
+  containerId,
+  initialData = [],
+  initialUserSequence = null,
+  options = {}
+) {
+  console.log(
+    '🌍 Creating user geo map with time-lapse for container:',
+    containerId
+  )
 
   // Default options
   const defaults = {
-    width: null,
-    height: null,
+    width: null, // If null, uses container width
+    height: 500, // Default height if not provided
     margin: { top: 10, right: 10, bottom: 10, left: 10 },
-    // Use a sequential color scale for similarity
     similarityColorScale: d3
       .scaleSequential(d3.interpolateBlues)
-      .domain([0.7, 1]), // Example: Blues for similarity >= 70%
-    userColor: '#FF5722', // Color for the user's sequence point
-    similarColor: '#3F51B5', // Base color for similar points (can be overridden by scale)
-    connectionColor: '#999', // Color for lines connecting user to similar
+      .domain([0.7, 1]),
+    userColor: '#FF5722',
+    similarColor: '#3F51B5',
+    connectionColor: '#999',
+    animationSpeedMs: 1000, // Default animation speed
   }
 
-  // Merge options
   const config = { ...defaults, ...options }
-  // Deep merge scales if provided
   if (options.similarityColorScale)
     config.similarityColorScale = options.similarityColorScale
+
+  // --- Encapsulated State ---
+  let _isPlaying = false
+  let _currentTime = null // Current year filter/highlight
+  let _timeMin = null // Min year from data
+  let _timeMax = null // Max year from data
+  let _animationTimer = null
+  let _similarityThreshold = 0 // 0-1 range
+  let _userSequence = initialUserSequence
+  let _currentDataSubset = initialData // Store the subset passed initially
 
   // --- Container Setup ---
   const container = document.getElementById(containerId)
   if (!container) {
     console.error(`Container with ID "${containerId}" not found`)
-    return null
+    return null // Return null on critical error
   }
   container.style.position = container.style.position || 'relative'
+  container.style.minHeight = `${config.height}px` // Ensure container has min height
 
   // --- SVG Setup ---
   let width = config.width || container.clientWidth
-  let height = config.height || container.clientHeight
+  let height = config.height // Use fixed or default height
   let innerWidth = width - config.margin.left - config.margin.right
   let innerHeight = height - config.margin.top - config.margin.bottom
 
-  // Clear previous SVG
-  d3.select(container).select('svg').remove()
+  d3.select(container).select('svg').remove() // Clear previous SVG
 
   const svg = d3
     .select(container)
     .append('svg')
     .attr('width', '100%')
-    .attr('height', '100%')
+    .attr('height', height) // Use fixed height
     .attr('viewBox', [0, 0, width, height])
-    .attr('preserveAspectRatio', 'xMidYMid meet')
+    .style('display', 'block') // Ensure SVG takes block space
 
   const g = svg
     .append('g')
@@ -61,12 +80,9 @@ export async function createUserGeoMap(containerId, options = {}) {
     .attr('transform', `translate(${config.margin.left},${config.margin.top})`)
 
   // --- Projection and Path ---
-  // Keep the projection you confirmed works
   const projection = d3
     .geoEquirectangular()
     .fitSize([innerWidth, innerHeight], { type: 'Sphere' })
-  // .scale(innerWidth / 6.2) // Rely on fitSize
-  // .translate([innerWidth / 2, innerHeight / 1.8]); // Rely on fitSize
 
   const path = d3.geoPath(projection)
   const graticule = d3.geoGraticule()
@@ -86,7 +102,6 @@ export async function createUserGeoMap(containerId, options = {}) {
     .attr('stroke', '#e0e0e0')
     .attr('stroke-width', 0.5)
 
-  // Group for map features and points
   const worldGroup = g.append('g').attr('class', 'world')
   const pointsGroup = g.append('g').attr('class', 'points')
   const connectionsGroup = g.append('g').attr('class', 'connections')
@@ -175,16 +190,64 @@ export async function createUserGeoMap(containerId, options = {}) {
     return null // Return null if parsing fails or coordinates are invalid
   }
 
+  /**
+   * Safely parses the year from sequence metadata.
+   * @param {Object} metadata - The metadata object for a sequence.
+   * @returns {number|null} The parsed year as an integer, or null if invalid.
+   */
+  function getSequenceYear(metadata) {
+    if (!metadata) return null
+    const yearSource = metadata.first_year ?? metadata.years?.[0] // Prefer first_year, fallback to years array
+    if (yearSource === null || yearSource === undefined) return null
+    const year = parseInt(yearSource)
+    return !isNaN(year) ? year : null
+  }
+
+  /**
+   * Generates HTML content for the tooltip for similar sequences.
+   * @param {Object} seqData - The data object for the hovered similar sequence.
+   * @param {Array|null} originalCoords - The original [lat, lon] before jittering.
+   * @returns {string} HTML string for the tooltip.
+   */
+  function getSimilarTooltipContent(seqData, originalCoords) {
+    const metadata = seqData.metadata || {}
+    const accession = metadata.accessions?.[0] || seqData.id || 'N/A'
+    const country = metadata.country || metadata.first_country || 'N/A'
+    const year =
+      metadata.first_year || (metadata.years && metadata.years[0]) || 'N/A'
+    const host = metadata.host || 'N/A'
+    const similarity =
+      seqData.similarity != null
+        ? (seqData.similarity * 100).toFixed(1) + '%'
+        : 'N/A'
+    const isolationSource = metadata.isolation_source || 'N/A'
+    // Use the passed originalCoords for display
+    const coordsString = originalCoords
+      ? `${originalCoords[0].toFixed(2)}, ${originalCoords[1].toFixed(2)}`
+      : 'N/A'
+
+    return `
+        <h4 style="margin: 0 0 6px 0; border-bottom: 1px solid #eee; padding-bottom: 4px;">Similar Sequence</h4>
+        <p style="margin: 2px 0;"><strong>Accession:</strong> ${accession}</p>
+        <p style="margin: 2px 0;"><strong>Similarity:</strong> ${similarity}</p>
+        <p style="margin: 2px 0;"><strong>Country:</strong> ${country}</p>
+        <p style="margin: 2px 0;"><strong>Year:</strong> ${year}</p>
+        <p style="margin: 2px 0;"><strong>Host:</strong> ${host}</p>
+        <p style="margin: 2px 0;"><strong>Isolation Source:</strong> ${isolationSource}</p>
+        <p style="margin: 2px 0;"><strong>Coords:</strong> ${coordsString}</p>
+      `
+  }
+
   // <<<--- START NEW ZOOM CODE --->>>
   // Define the zoom behavior
   const zoomBehavior = d3
     .zoom()
     .scaleExtent([1, 8]) // Map specific extent (min zoom 1x, max 8x)
     .filter((event) => !(event.type === 'wheel')) // Disable wheel zoom, keep drag pan
-    .on('zoom', zoomed) // Attach the zoom event handler
+    .on('zoom', _zoomed) // Attach the zoom event handler
 
   // Define the zoom event handler function
-  function zoomed(event) {
+  function _zoomed(event) {
     // Apply the transform to the main content group 'g'
     // This will move/scale the world paths, points, and connections
     g.attr('transform', event.transform)
@@ -202,54 +265,29 @@ export async function createUserGeoMap(containerId, options = {}) {
   // <<<--- END NEW ZOOM CODE --->>>
 
   /**
-   * Safely parses the year from sequence metadata.
-   * @param {Object} metadata - The metadata object for a sequence.
-   * @returns {number|null} The parsed year as an integer, or null if invalid.
+   * Redraws the map points and connections based on internal state
+   * (_userSequence, _currentDataSubset, _currentTime, _similarityThreshold).
    */
-  function getSequenceYear(metadata) {
-    if (!metadata) return null
-    const yearSource = metadata.first_year ?? metadata.years?.[0] // Prefer first_year, fallback to years array
-    if (yearSource === null || yearSource === undefined) return null
-    const year = parseInt(yearSource)
-    return !isNaN(year) ? year : null
-  }
+  function _redrawMap() {
+    const yearFilter = _currentTime // Use internal state
+    const similarityThreshold = _similarityThreshold // Use internal state
+    const userSequence = _userSequence // Use internal state
+    const sequencesToPlot = _currentDataSubset || [] // Use internal state
 
-  /**
-   * Update the map with user sequence and similar sequences, applying filters and time highlighting.
-   * @param {Object|null} userSequence - The user's sequence data.
-   * @param {Array} allSimilarSequences - The *full* array of similar sequences.
-   * @param {number|null} yearFilter - The year to highlight sequences for. If null, no time highlighting is applied.
-   * @param {number} similarityThreshold - The minimum similarity (0-1 range) required to display a point prominently.
-   */
-  function updateMap(
-    userSequence,
-    allSimilarSequences = [],
-    yearFilter = null,
-    similarityThreshold = 0
-  ) {
     console.log(
-      `🌍 User Geo Map: Updating. Year Highlight: ${
+      `🌍 Geo Map: Redrawing. Year: ${
         yearFilter ?? 'None'
-      }, Min Similarity: ${similarityThreshold.toFixed(2)}`
+      }, Sim: ${similarityThreshold.toFixed(2)}, Points: ${
+        sequencesToPlot.length
+      }`
     )
 
-    // We are plotting ALL sequences passed in, but styling based on filters.
-    const sequencesToPlot = Array.isArray(allSimilarSequences)
-      ? allSimilarSequences
-      : []
-    console.log(
-      `🌍 User Geo Map: Plotting ${sequencesToPlot.length} sequences.` // Log total sequences being plotted
-    )
-
-    // Clear previous points and connections
     pointsGroup.selectAll('.map-point').remove()
     connectionsGroup.selectAll('.map-connection').remove()
 
     let userCoords = null
     let userProjected = null
-    let userCoordIsPlaceholder = true
 
-    // --- Process User Sequence Data ---
     if (userSequence) {
       console.log(
         `🌍 Geo Map - Processing User Sequence: ID=${userSequence.id}`
@@ -259,7 +297,7 @@ export async function createUserGeoMap(containerId, options = {}) {
       console.warn(
         '🌍 Geo Map: Using static placeholder coordinates for user sequence.'
       )
-      userProjected = projection([userCoords[1], userCoords[0]]) // [lon, lat]
+      userProjected = projection([userCoords[1], userCoords[0]])
       if (
         !userProjected ||
         isNaN(userProjected[0]) ||
@@ -275,55 +313,34 @@ export async function createUserGeoMap(containerId, options = {}) {
       userProjected = null
     }
 
-    // --- JITTERING SETUP ---
+    // --- Jittering SETUP ---
     const occupiedCoordinates = {}
     const jitterRadiusBase = 2
     const goldenAngle = Math.PI * (3 - Math.sqrt(5))
 
-    // Determine Top 10 IDs (assuming input is sorted by similarity)
+    // --- SPLIT DATA for drawing order ---
     const top10Ids = new Set(sequencesToPlot.slice(0, 10).map((s) => s.id))
+    const top10Sequences = sequencesToPlot.filter((seq) => top10Ids.has(seq.id))
+    const otherSequences = sequencesToPlot.filter(
+      (seq) => !top10Ids.has(seq.id)
+    )
 
-    // --- Plot Similar Sequence Points ---
-    sequencesToPlot.forEach((seq, index) => {
-      console.log(
-        `🌍 Geo Map - Processing Similar Seq #${index}: ID=${seq?.id}, LatLon=${seq?.metadata?.lat_lon}`
-      )
-      if (!seq || !seq.metadata) {
-        console.warn(
-          `🌍 Geo Map - Skipping Seq #${index}: Missing sequence or metadata.`
-        )
-        return
-      }
-
+    // --- Function to plot a single sequence (avoids code duplication) ---
+    const plotSequencePoint = (seq, index, isTop10) => {
+      if (!seq || !seq.metadata) return
       const similarCoords = parseLatLon(seq.metadata.lat_lon)
-      if (!similarCoords) {
-        console.warn(
-          `🌍 Geo Map - Skipping Seq #${index} (ID: ${seq.id}): Could not parse coordinates.`
-        )
-        return
-      }
-
+      if (!similarCoords) return
       const similarProjected = projection([similarCoords[1], similarCoords[0]])
-      console.log(
-        `🌍 Geo Map - Seq #${index} (ID: ${seq.id}) Initial Projected Coords: [${similarProjected?.[0]}, ${similarProjected?.[1]}]`
-      )
-
       if (
         !similarProjected ||
         isNaN(similarProjected[0]) ||
         isNaN(similarProjected[1])
-      ) {
-        console.warn(
-          `🌍 Geo Map - Skipping Seq #${index} (ID: ${seq.id}): Projection failed.`
-        )
+      )
         return
-      }
 
-      // --- Jittering Logic ---
       let finalX = similarProjected[0]
       let finalY = similarProjected[1]
       const coordKey = `${finalX.toFixed(3)},${finalY.toFixed(3)}`
-
       if (occupiedCoordinates[coordKey]) {
         occupiedCoordinates[coordKey]++
         const count = occupiedCoordinates[coordKey]
@@ -331,65 +348,57 @@ export async function createUserGeoMap(containerId, options = {}) {
         const radius = jitterRadiusBase * Math.sqrt(count)
         finalX += radius * Math.cos(angle)
         finalY += radius * Math.sin(angle)
-        console.log(
-          `🌍 Geo Map - Jittering Seq #${index} (ID: ${
-            seq.id
-          }). Count at location: ${count}, Offset: [${(
-            radius * Math.cos(angle)
-          ).toFixed(2)}, ${(radius * Math.sin(angle)).toFixed(2)}]`
-        )
       } else {
         occupiedCoordinates[coordKey] = 1
       }
 
-      // --- Determine Styles based on Similarity and Time ---
+      // Determine Styles based on internal state (_currentTime, _similarityThreshold)
       const meetsSimilarity = (seq.similarity ?? 0) >= similarityThreshold
       const sequenceYear = getSequenceYear(seq.metadata)
-      // Highlight only if yearFilter is active AND sequence year matches
       const isTimeHighlighted =
         yearFilter !== null && sequenceYear === yearFilter
-      const isTop10 = top10Ids.has(seq.id)
+      // isTop10 is passed as argument
 
       let pointFill, pointStroke, pointStrokeWidth, pointOpacity, pointRadius
 
       if (!meetsSimilarity) {
-        // Style for below similarity threshold (always very faded)
-        pointFill = '#e0e0e0' // Light grey
+        pointFill = '#e0e0e0'
         pointStroke = '#bdbdbd'
         pointStrokeWidth = 0.2
-        pointOpacity = 0.1
+        pointOpacity = 0.1 // Very low opacity for points below similarity threshold
         pointRadius = 3
       } else {
-        // Base style for sequences meeting similarity threshold
-        pointFill = config.similarityColorScale(seq.similarity || 0) // Color by similarity
-        pointStroke = isTop10 ? config.userColor : '#333' // Top 10 border
+        // *** UPDATED FILL COLOR LOGIC ***
+        if (isTop10) {
+          pointFill = '#e91e62' // Red for Top 10
+        } else {
+          pointFill = '#607D8B' // Blue Grey for others (11+)
+        }
+
+        pointStroke = isTop10 ? config.userColor : '#333'
         pointStrokeWidth = isTop10 ? 1.5 : 0.5
         pointRadius = isTop10 ? 5 : 4
-        pointOpacity = 0.7
+        // Set base opacity based on whether it's Top 10 or not
+        pointOpacity = isTop10 ? 1.0 : 0.7 // Higher base opacity for Top 10
 
-        // Apply time-based adjustments *if* a year filter is active
+        // Apply time-based adjustments ONLY if yearFilter is active (not null)
         if (yearFilter !== null) {
+          const isTimeHighlighted = sequenceYear === yearFilter
           if (isTimeHighlighted) {
-            // Time-highlighted style
+            // Keep full opacity or even enhance slightly if desired
             pointOpacity = 1.0
-            pointRadius = isTop10 ? 6.5 : 5.5 // Enlarge
-            pointStrokeWidth = isTop10 ? 2.0 : 1.5 // Thicker border
+            pointRadius = isTop10 ? 6.5 : 5.5
+            pointStrokeWidth = isTop10 ? 2.0 : 1.5
           } else {
-            // Time-faded style (meets similarity, but wrong year)
-            pointOpacity = 0.25 // Moderately faded
-            pointRadius = isTop10 ? 4.5 : 3.5 // Slightly smaller
-            // Optional: Desaturate fill slightly? For now, just use opacity.
-            // pointFill = d3.color(pointFill).brighter(-0.5).formatHex();
+            // Fade points not matching the current year filter
+            pointOpacity = 0.25
+            pointRadius = isTop10 ? 4.5 : 3.5
           }
         }
-        // If yearFilter is null, the base style from above is used (no time fading/highlighting)
+        // If yearFilter IS null, the base opacity (0.7 or 1.0) set above is used.
       }
-      // --- End Style Determination ---
 
-      console.log(
-        `🌍 Geo Map - Appending circle for Seq #${index} (ID: ${seq.id}) at [${finalX}, ${finalY}]`
-      )
-      // Append similar point circle with dynamic styles
+      // Append similar point circle
       pointsGroup
         .append('circle')
         .attr(
@@ -414,7 +423,6 @@ export async function createUserGeoMap(containerId, options = {}) {
             .transition()
             .duration(100)
             .style('opacity', 1)
-          // Optional: Slightly enhance hover even if faded/highlighted
           d3.select(this)
             .raise()
             .transition()
@@ -428,23 +436,18 @@ export async function createUserGeoMap(containerId, options = {}) {
         })
         .on('mouseout', function () {
           tooltip.style('opacity', 0).style('visibility', 'hidden')
-          // Revert hover enhancement
           d3.select(this)
             .transition()
             .duration(50)
             .style('stroke-width', pointStrokeWidth)
         })
 
-      // --- Draw Connection Line ---
+      // Draw Connection Line
       if (userProjected) {
-        // Fade connection if the *target* point is faded (either by similarity or time)
-        let connectionOpacity = 0.4 // Default
-        if (!meetsSimilarity) {
-          connectionOpacity = 0.05 // Very faint if below similarity
-        } else if (yearFilter !== null && !isTimeHighlighted) {
-          connectionOpacity = 0.1 // Faint if time-faded
-        }
-
+        let connectionOpacity = 0.4
+        if (!meetsSimilarity) connectionOpacity = 0.05
+        else if (yearFilter !== null && !isTimeHighlighted)
+          connectionOpacity = 0.1
         connectionsGroup
           .append('line')
           .attr('class', 'map-connection')
@@ -457,16 +460,19 @@ export async function createUserGeoMap(containerId, options = {}) {
           .attr('stroke-opacity', connectionOpacity)
           .attr('data-target', seq.id)
       }
-    })
+    }
 
-    // --- Plot User Sequence Point LAST ---
+    // --- Plot Similar Sequence Points (Other first, then Top 10) ---
+    otherSequences.forEach((seq, index) =>
+      plotSequencePoint(seq, index + 10, false)
+    ) // Plot 11+ first
+    top10Sequences.forEach((seq, index) => plotSequencePoint(seq, index, true)) // Plot Top 10 last
+
+    // --- Plot User Sequence Point LAST (logic remains the same) ---
     if (userProjected) {
-      // Apply similar time-based styling logic to user point?
-      // For now, user point always prominent.
-      const userPointOpacity = 1.0 // Keep user point fully visible
+      const userPointOpacity = 1.0
       const userPointRadius = 6
       const userPointStrokeWidth = 1.5
-
       pointsGroup
         .append('circle')
         .attr('class', 'map-point user-point')
@@ -482,9 +488,9 @@ export async function createUserGeoMap(containerId, options = {}) {
         .on('mouseover', function (event) {
           tooltip
             .html(
-              `<h4>Your Sequence</h4>
-                     <p>ID: ${userSequence?.id || 'N/A'}</p> 
-                     <p style="color: #777;">(Placeholder Location)</p>`
+              `<h4>Your Sequence</h4><p>ID: ${
+                userSequence?.id || 'N/A'
+              }</p><p style="color: #777;">(Placeholder Location)</p>`
             )
             .style('visibility', 'visible')
             .transition()
@@ -505,45 +511,227 @@ export async function createUserGeoMap(containerId, options = {}) {
     }
   }
 
-  /**
-   * Generates HTML content for the tooltip for similar sequences.
-   * @param {Object} seqData - The data object for the hovered similar sequence.
-   * @param {Array|null} originalCoords - The original [lat, lon] before jittering.
-   * @returns {string} HTML string for the tooltip.
-   */
-  function getSimilarTooltipContent(seqData, originalCoords) {
-    const metadata = seqData.metadata || {}
-    const accession = metadata.accessions?.[0] || seqData.id || 'N/A'
-    const country = metadata.country || metadata.first_country || 'N/A'
-    const year =
-      metadata.first_year || (metadata.years && metadata.years[0]) || 'N/A'
-    const host = metadata.host || 'N/A'
-    const similarity =
-      seqData.similarity != null
-        ? (seqData.similarity * 100).toFixed(1) + '%'
-        : 'N/A'
-    // const distance =
-    //   seqData.distance != null ? seqData.distance.toFixed(3) : 'N/A'
-    const isolationSource = metadata.isolation_source || 'N/A'
-    // Use the passed originalCoords for display
-    const coordsString = originalCoords
-      ? `${originalCoords[0].toFixed(2)}, ${originalCoords[1].toFixed(2)}`
-      : 'N/A'
+  // --- Time-Lapse Logic (Internal) ---
 
-    return `
-        <h4 style="margin: 0 0 6px 0; border-bottom: 1px solid #eee; padding-bottom: 4px;">Similar Sequence</h4>
-        <p style="margin: 2px 0;"><strong>Accession:</strong> ${accession}</p>
-        <p style="margin: 2px 0;"><strong>Similarity:</strong> ${similarity}</p>
-        <p style="margin: 2px 0;"><strong>Country:</strong> ${country}</p>
-        <p style="margin: 2px 0;"><strong>Year:</strong> ${year}</p>
-        <p style="margin: 2px 0;"><strong>Host:</strong> ${host}</p>
-        <p style="margin: 2px 0;"><strong>Isolation Source:</strong> ${isolationSource}</p>
-        <p style="margin: 2px 0;"><strong>Coords:</strong> ${coordsString}</p>
-      `
+  function _getAnimationSpeed() {
+    return config.animationSpeedMs || 1000 // Use configured or default speed
   }
 
-  /**
-   * Highlight a sequence point and its connection on the map.
+  function _stepTime() {
+    if (!_isPlaying || _timeMin === null || _timeMax === null) {
+      _stopAnimation() // Ensure stopped if state is inconsistent
+      return
+    }
+
+    let currentYear = _currentTime
+    if (currentYear === null) currentYear = _timeMin - 1 // Start before first year
+
+    if (currentYear < _timeMax) {
+      currentYear++
+      _currentTime = currentYear // Update internal state
+      _redrawMap() // Redraw with new time highlight
+      // External UI update needed here - consider callback or event
+      _updateExternalUI() // Call function to update external sliders/labels
+
+      if (_isPlaying) {
+        // Check again before scheduling next step
+        _animationTimer = setTimeout(_stepTime, _getAnimationSpeed())
+      }
+    } else {
+      console.log('🌍 Geo Map: Reached end year. Stopping animation.')
+      _stopAnimation() // Stop at the end
+      // Ensure UI reflects stopped state and final year
+      _updateExternalUI()
+    }
+  }
+
+  function _startAnimation() {
+    if (_isPlaying) return
+    if (_timeMin === null || _timeMax === null) {
+      console.warn('🌍 Geo Map: Cannot start animation - time range not set.')
+      return
+    }
+    console.log('🌍 Geo Map: ▶️ Starting animation')
+    _isPlaying = true
+
+    // If current time is at end or null, reset to start before playing
+    if (_currentTime === null || _currentTime >= _timeMax) {
+      _currentTime = _timeMin
+    }
+    _updateExternalUI() // Update button text etc.
+
+    _stepTime() // Start the first step
+  }
+
+  function _stopAnimation() {
+    if (!_isPlaying && _animationTimer === null) return // Already stopped
+    console.log('🌍 Geo Map: ⏸️ Stopping animation')
+    _isPlaying = false
+    if (_animationTimer) {
+      clearTimeout(_animationTimer)
+      _animationTimer = null
+    }
+    _updateExternalUI() // Update button text etc.
+  }
+
+  // --- External UI Interaction (Internal Helper) ---
+  /** Updates the external slider/label UI based on internal state */
+  function _updateExternalUI() {
+    // This function needs access to the DOM elements outside the component.
+    // Best practice: Use a callback passed in options, or emit custom events.
+    // Simple approach for now: Direct DOM manipulation (less ideal but works).
+    const timeSlider = document.getElementById('time-slider-geo')
+    const currentTimeDisplay = document.getElementById(
+      'current-time-display-geo'
+    )
+    const playPauseButton = document.getElementById('play-pause-button-geo')
+    const timeMinLabel = document.getElementById('time-min-label-geo')
+    const timeMaxLabel = document.getElementById('time-max-label-geo')
+    const similaritySlider = document.getElementById('similarity-slider-geo')
+    const similarityValue = document.getElementById('similarity-value-geo')
+    const resetTimeButton = document.getElementById('reset-time-button-geo') // Get reset button
+
+    const hasTimeRange = _timeMin !== null && _timeMax !== null
+
+    if (timeSlider) {
+      timeSlider.min = _timeMin ?? 1900
+      timeSlider.max = _timeMax ?? new Date().getFullYear()
+      // Set slider value to max if _currentTime is null, otherwise use _currentTime
+      timeSlider.value = _currentTime ?? _timeMax ?? timeSlider.min
+      timeSlider.disabled = !hasTimeRange
+    }
+    if (currentTimeDisplay) {
+      // Display "All" if _currentTime is null, otherwise the year
+      currentTimeDisplay.textContent = `Year: ${_currentTime ?? 'All'}`
+    }
+    if (playPauseButton) {
+      playPauseButton.textContent = _isPlaying ? 'Pause' : 'Play'
+      playPauseButton.disabled = !hasTimeRange
+    }
+    if (resetTimeButton) {
+      resetTimeButton.disabled = !hasTimeRange // Enable reset only if time range is valid
+    }
+    if (timeMinLabel) timeMinLabel.textContent = _timeMin ?? 'N/A'
+    if (timeMaxLabel) timeMaxLabel.textContent = _timeMax ?? 'N/A'
+
+    // Also update similarity slider display (value doesn't change, just ensure it's enabled)
+    if (similaritySlider) {
+      // Enable/disable based on whether data exists? Or always enabled?
+      // similaritySlider.disabled = !_currentDataSubset || _currentDataSubset.length === 0;
+      similaritySlider.value = (_similarityThreshold * 100).toFixed(0)
+    }
+    if (similarityValue) {
+      similarityValue.textContent = `${(_similarityThreshold * 100).toFixed(
+        0
+      )}%`
+    }
+  }
+
+  // --- Public API Methods ---
+
+  /** Plays the time-lapse animation. */
+  function play() {
+    _startAnimation()
+  }
+
+  /** Pauses the time-lapse animation. */
+  function pause() {
+    _stopAnimation()
+  }
+
+  /** Resets the time filter state and stops animation. */
+  function resetTime() {
+    console.log('🌍 Geo Map: Resetting time filter.')
+    _stopAnimation()
+    _currentTime = null // Reset to null to signify "show all"
+    _redrawMap()
+    _updateExternalUI()
+  }
+
+  /** Sets the current year filter and redraws the map. Stops animation if playing. */
+  function setYear(year) {
+    if (_isPlaying) _stopAnimation() // Stop animation on manual change
+    const newYear = parseInt(year)
+    if (
+      !isNaN(newYear) &&
+      newYear >= (_timeMin ?? -Infinity) &&
+      newYear <= (_timeMax ?? Infinity)
+    ) {
+      _currentTime = newYear
+      console.log(`🌍 Geo Map: Setting year filter to: ${_currentTime}`)
+      _redrawMap()
+      _updateExternalUI()
+    } else {
+      console.warn(`🌍 Geo Map: Invalid year set: ${year}`)
+    }
+  }
+
+  /** Sets the minimum similarity threshold and redraws the map. */
+  function setSimilarity(thresholdPercent) {
+    const newThreshold =
+      Math.max(0, Math.min(100, parseFloat(thresholdPercent))) / 100
+    if (!isNaN(newThreshold)) {
+      _similarityThreshold = newThreshold
+      console.log(
+        `🌍 Geo Map: Setting similarity threshold to: ${(
+          _similarityThreshold * 100
+        ).toFixed(0)}%`
+      )
+      _redrawMap()
+      _updateExternalUI() // Update external UI slider value display
+    } else {
+      console.warn(
+        `🌍 Geo Map: Invalid similarity threshold set: ${thresholdPercent}`
+      )
+    }
+  }
+
+  /** Updates the time range (min/max years) for the component and controls. */
+  function setTimeRange(minYear, maxYear) {
+    _timeMin = minYear
+    _timeMax = maxYear
+    console.log(`🌍 Geo Map: Time range set: ${_timeMin} - ${_timeMax}`)
+    // Reset currentTime if it's outside the new range? Or keep it?
+    if (
+      _currentTime !== null &&
+      (_currentTime < _timeMin || _currentTime > _timeMax)
+    ) {
+      _currentTime = _timeMax // Default to max if current is out of bounds
+    }
+    _updateExternalUI() // Update sliders etc.
+  }
+
+  /** Returns true if the animation is currently playing. */
+  function isPlaying() {
+    return _isPlaying
+  }
+
+  /** Updates the data used by the map and redraws. */
+  function updateData(newUserSequence, newSimilarSequences) {
+    _userSequence = newUserSequence
+    _currentDataSubset = newSimilarSequences || []
+    console.log(
+      `🌍 Geo Map: Data updated. User: ${!!_userSequence}, Subset Size: ${
+        _currentDataSubset.length
+      }`
+    )
+    // Decide whether to reset time filter on data update. Currently keeps existing filter.
+    // _currentTime = _timeMax; // Optionally reset time
+    _redrawMap()
+    _updateExternalUI()
+  }
+
+  /** Cleans up the component, removes listeners and elements. */
+  function destroy() {
+    _stopAnimation() // Stop animation timer
+    window.removeEventListener('resize', handleResize)
+    tooltip.remove()
+    svg.on('.zoom', null) // Remove zoom listeners
+    svg.remove()
+    console.log(`🌍 User Geo Map ${containerId} destroyed.`)
+  }
+
+  /** Highlight a sequence point and its connection on the map.
    * @param {string} id - ID of the sequence to highlight.
    * @param {boolean} highlight - Whether to highlight or unhighlight.
    */
@@ -574,12 +762,10 @@ export async function createUserGeoMap(containerId, options = {}) {
     }
   }
 
-  /**
-   * Handles window resize events.
-   */
+  // --- Resize Handling ---
   function handleResize() {
     width = container.clientWidth
-    height = container.clientHeight
+    // height = container.clientHeight; // Keep fixed height
     innerWidth = width - config.margin.left - config.margin.right
     innerHeight = height - config.margin.top - config.margin.bottom
 
@@ -637,22 +823,26 @@ export async function createUserGeoMap(containerId, options = {}) {
     // For now, log the error and continue, the map might be partially usable.
   }
 
-  // Return public API
+  // --- Initial Draw ---
+  _redrawMap() // Draw initial state using internal data
+
+  // --- Return Public API ---
   return {
     svg: svg,
     projection: projection,
-    updateMap: updateMap,
     highlightSequence,
     zoomBehavior: zoomBehavior,
-    destroy: () => {
-      window.removeEventListener('resize', handleResize)
-      tooltip.remove()
-      svg.on('.zoom', null) // Remove zoom listeners
-      svg.remove()
-      console.log(`🌍 User Geo Map ${containerId} destroyed.`)
-    },
+    // Time-lapse controls
+    play,
+    pause,
+    resetTime,
+    setYear,
+    setSimilarity,
+    setTimeRange,
+    isPlaying,
+    // Data update
+    updateData,
+    // Cleanup
+    destroy,
   }
 }
-
-// // Removed parseLatLon helper if not needed or handled differently
-// function parseLatLon(latLonStr) { ... } // Potentially remove if logic moved or simplified
