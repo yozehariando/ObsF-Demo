@@ -387,14 +387,15 @@ function createJobTracker(jobId, options = {}) {
 
   // Create and expose the public API
   return {
-    show,
-    hide,
     updateStatus,
     updateProgress,
+    show,
+    hide,
     complete,
     error,
     timeout,
     element: trackerElement,
+    jobId: jobId,
   }
 }
 

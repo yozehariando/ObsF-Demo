@@ -5,7 +5,7 @@ toc: false
 
 <link rel="stylesheet" href="./components/ui/styles/ui-components.css" id="ui-components-styles">
 
-# Modular DNA Mutation Dashboard - Alternative layout 1
+# Modular DNA Mutation Dashboard
 
 <!-- Upload/Instructions Section -->
 <div class="card p-4 mb-4">
@@ -647,58 +647,6 @@ async function handleJobCompletion(jobId, jobData) {
   }
 }
 
-// Placeholder for the new info panel/legend logic needed for the single UMAP
-// This replaces the one previously inside updateUmapVisualization
-function addOrUpdateInfoPanel(containerId, sequences) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    // Remove existing info container
-    const existingInfoContainer = container.querySelector('.umap-info-container');
-    if (existingInfoContainer) existingInfoContainer.remove();
-
-    const infoContainer = document.createElement('div');
-    infoContainer.className = 'umap-info-container'; // Use existing class for styling
-
-    const userSequences = sequences.filter(d => d.isUserSequence);
-    const top10Sequences = sequences.filter(d => !d.isUserSequence && d.isTop10);
-    const otherSequences = sequences.filter(d => !d.isUserSequence && !d.isTop10);
-
-    // Basic Stats
-    const statsHtml = `
-        <div style="font-weight: bold; margin-bottom: 4px;">Sequence Stats</div>
-        <div>User Sequence: <strong>${userSequences.length}</strong></div>
-        <div>Top 10 Similar: <strong>${top10Sequences.length}</strong></div>
-        <div>Other Similar (11-100): <strong>${otherSequences.length}</strong></div>
-        <div>Total Displayed: <strong>${sequences.length}</strong></div>
-    `;
-
-    // Legend (needs colors defined according to scatter-plot.js implementation)
-    const legendItems = [
-        { color: '#FF5722', label: 'User Sequence' }, // Example color - MUST MATCH scatter-plot.js
-        { color: '#E91E63', label: 'Top 10 Similar' }, // Example color - MUST MATCH scatter-plot.js
-        { color: '#9E9E9E', label: 'Similar (11-100)' }, // Example color - MUST MATCH scatter-plot.js
-        // Add line legend if needed later
-    ];
-    const legendElement = createLegend(null, legendItems, 'UMAP Legend');
-
-    // Assemble panel
-    const statsDiv = document.createElement('div');
-    statsDiv.className = 'sequence-stats'; // Use existing class
-    statsDiv.style.flex = '1';
-    statsDiv.innerHTML = statsHtml;
-
-    const legendDiv = document.createElement('div');
-    legendDiv.style.flex = '1';
-    legendDiv.appendChild(legendElement);
-
-
-    infoContainer.appendChild(statsDiv);
-    infoContainer.appendChild(legendDiv);
-
-    container.appendChild(infoContainer);
-    console.log("Added/Updated info panel for UMAP.");
-}
 
 // Make sure this helper function exists before updateDetailsWithSimilarSequences
 function getSimilarityColor(similarity) {
@@ -1256,9 +1204,25 @@ resetButton?.addEventListener('click', () => {
 
   // Show empty state messages again
   document.querySelectorAll('.empty-state-message').forEach(el => el.style.display = 'flex');
-  // Clear job tracker
-  state.jobTracker?.destroy();
-  state.jobTracker = null;
+
+  // --- Correctly Remove Job Tracker --- //
+  if (state.jobTracker) {
+    if (typeof state.jobTracker.hide === 'function') {
+      state.jobTracker.hide(); // Call hide method if available
+    }
+    // Use the returned element directly
+    if (state.jobTracker.element && typeof state.jobTracker.element.remove === 'function') {
+      state.jobTracker.element.remove();
+      console.log(`Removed job tracker element: ${state.jobTracker.element.id}`);
+    } else {
+      // Fallback (should be less likely needed now)
+      console.warn('Could not remove job tracker element directly, trying fallback selector.');
+      const floatingTracker = document.querySelector('.floating-tracker');
+      if (floatingTracker) floatingTracker.remove();
+    }
+    state.jobTracker = null; // Nullify the state variable
+  }
+  // --- End Corrected Removal --- //
 
   // Hide zoom controls
   document.querySelectorAll('.zoom-controls').forEach(controls => {
